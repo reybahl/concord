@@ -13,7 +13,21 @@ export interface PipelineStageSnapshot {
   label: string;
   status: "start" | "done";
   detail?: string;
-  notes: { text: string; tone?: NoteEvent["tone"] }[];
+  notes: { text: string; tone?: NoteEvent["tone"]; slot?: string }[];
+}
+
+function upsertStageNote(
+  notes: PipelineStageSnapshot["notes"],
+  note: PipelineStageSnapshot["notes"][number],
+) {
+  if (note.slot) {
+    const slotIndex = notes.findIndex((n) => n.slot === note.slot);
+    if (slotIndex >= 0) {
+      notes[slotIndex] = note;
+      return;
+    }
+  }
+  notes.push(note);
 }
 
 export function isPersistablePipelineEvent(
@@ -45,10 +59,10 @@ export function foldPipelineEvents(events: ReadonlyArray<PersistedPipelineEvent>
       continue;
     }
 
-    const note = { text: event.text, tone: event.tone };
+    const note = { text: event.text, tone: event.tone, slot: event.slot };
     const existing = stages.find((s) => s.stage === event.stage);
     if (existing) {
-      existing.notes.push(note);
+      upsertStageNote(existing.notes, note);
     } else {
       stages.push({
         stage: event.stage,

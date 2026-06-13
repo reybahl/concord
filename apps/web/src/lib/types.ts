@@ -132,6 +132,8 @@ export interface NoteEvent {
   stage: string;
   text: string;
   tone?: "info" | "merge" | "flag" | "model";
+  /** When set, replaces the prior note with the same slot instead of appending. */
+  slot?: string;
 }
 
 export interface ResultEvent {

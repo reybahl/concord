@@ -59,6 +59,7 @@ interface SavedRecordMeta {
 interface LiveNote {
   text: string;
   tone?: "info" | "merge" | "flag" | "model";
+  slot?: string;
 }
 
 interface LiveStage {
@@ -276,12 +277,21 @@ export function ConcordApp() {
 
   function applyNote(event: NoteEvent) {
     setStages((prev) => {
+      const note: LiveNote = { text: event.text, tone: event.tone, slot: event.slot };
       const existing = prev.find((s) => s.stage === event.stage);
-      const note: LiveNote = { text: event.text, tone: event.tone };
       if (existing) {
-        return prev.map((s) =>
-          s.stage === event.stage ? { ...s, notes: [...s.notes, note] } : s,
-        );
+        return prev.map((s) => {
+          if (s.stage !== event.stage) return s;
+          if (event.slot) {
+            const slotIndex = s.notes.findIndex((n) => n.slot === event.slot);
+            if (slotIndex >= 0) {
+              const notes = [...s.notes];
+              notes[slotIndex] = note;
+              return { ...s, notes };
+            }
+          }
+          return { ...s, notes: [...s.notes, note] };
+        });
       }
       return [...prev, { stage: event.stage, label: event.stage, status: "start", notes: [note] }];
     });

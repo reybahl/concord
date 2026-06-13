@@ -22,7 +22,7 @@ Be precise and conservative. Do not hallucinate codes, values, or facts. Notes m
 export type ReconcileNoteTone = "info" | "merge" | "model";
 
 export type ReconcileStreamEvent =
-  | { type: "note"; text: string; tone: ReconcileNoteTone }
+  | { type: "note"; text: string; tone: ReconcileNoteTone; slot?: string }
   | { type: "done"; result: Reconciled };
 
 const HEARTBEATS = [
@@ -99,7 +99,12 @@ function* notesFromPartial(
 ): Generator<ReconcileStreamEvent> {
   if (partial.patient?.name && !state.patientEmitted) {
     state.patientEmitted = true;
-    yield { type: "note", tone: "info", text: `Patient: ${partial.patient.name}` };
+    yield {
+      type: "note",
+      tone: "info",
+      text: `Patient: ${partial.patient.name}`,
+      slot: "reconcile-patient",
+    };
   }
 
   const identityNotes = partial.identityNotes ?? [];
@@ -118,19 +123,34 @@ function* notesFromPartial(
 
   const medCount = partial.medications?.length ?? 0;
   if (medCount > state.lastMedCount) {
-    yield { type: "note", tone: "model", text: `${medCount} medication${medCount === 1 ? "" : "s"} reconciled…` };
+    yield {
+      type: "note",
+      tone: "model",
+      text: `${medCount} medication${medCount === 1 ? "" : "s"} reconciled…`,
+      slot: "reconcile-meds",
+    };
     state.lastMedCount = medCount;
   }
 
   const labCount = partial.labs?.length ?? 0;
   if (labCount > state.lastLabCount) {
-    yield { type: "note", tone: "model", text: `${labCount} lab series built…` };
+    yield {
+      type: "note",
+      tone: "model",
+      text: `${labCount} lab series built…`,
+      slot: "reconcile-labs",
+    };
     state.lastLabCount = labCount;
   }
 
   const condCount = partial.conditions?.length ?? 0;
   if (condCount > state.lastCondCount) {
-    yield { type: "note", tone: "model", text: `${condCount} condition${condCount === 1 ? "" : "s"} coded…` };
+    yield {
+      type: "note",
+      tone: "model",
+      text: `${condCount} condition${condCount === 1 ? "" : "s"} coded…`,
+      slot: "reconcile-conditions",
+    };
     state.lastCondCount = condCount;
   }
 }
@@ -164,7 +184,7 @@ export async function* reconcileStream(docs: DocExtraction[]): AsyncGenerator<Re
   for await (const item of withHeartbeat(partialObjectStream, 3500, () => {
     const text = HEARTBEATS[heartbeatIndex % HEARTBEATS.length]!;
     heartbeatIndex += 1;
-    return { type: "note", tone: "model", text };
+    return { type: "note", tone: "model", text, slot: "reconcile-status" };
   })) {
     if ("type" in item) {
       yield item;

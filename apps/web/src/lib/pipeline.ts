@@ -95,7 +95,13 @@ async function* runLive(docs: SourceDoc[]): AsyncGenerator<PipelineEvent> {
   let reconciled: Reconciled | undefined;
   for await (const event of reconcileStream(extractions)) {
     if (event.type === "note") {
-      yield { type: "note", stage: "reconcile", tone: event.tone, text: event.text };
+      yield {
+        type: "note",
+        stage: "reconcile",
+        tone: event.tone,
+        text: event.text,
+        slot: event.slot,
+      };
     } else {
       reconciled = event.result;
     }
