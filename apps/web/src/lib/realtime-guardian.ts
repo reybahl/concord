@@ -27,11 +27,19 @@ export type GuardianStatus =
 
 export type UtteranceDecision = { mode: "speak"; text: string } | { mode: "silent" };
 
+export type CaptureSource = "mic" | "tab";
+
 export interface GuardianSessionConfig {
   token: string;
   model: string;
   voice: string;
   instructions: string;
+  /**
+   * Where the room audio comes from. "mic" listens through the microphone (the
+   * real-world story); "tab" captures another browser tab's audio directly via
+   * getDisplayMedia — a clean digital feed with no echo, ideal for demos.
+   */
+  captureSource?: CaptureSource;
   onStatus?: (status: GuardianStatus) => void;
   onTranscript?: (role: "room" | "guardian", text: string, final: boolean) => void;
   /** Decide what to do with a finalized room utterance. Runs the grounded check. */
@@ -105,10 +113,7 @@ export class GuardianSession {
     this.playCtx = new Ctx({ sampleRate: SAMPLE_RATE });
     this.playbackTime = this.playCtx.currentTime;
 
-    this.micStream = await navigator.mediaDevices.getUserMedia({
-      audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
-    });
-
+    this.micStream = await this.captureStream();
     this.micSource = this.micCtx.createMediaStreamSource(this.micStream);
     this.processor = this.micCtx.createScriptProcessor(4096, 1, 1);
     this.processor.onaudioprocess = (e) => this.onMicFrame(e.inputBuffer.getChannelData(0));
@@ -118,6 +123,26 @@ export class GuardianSession {
     this.micSource.connect(this.processor);
     this.processor.connect(sink);
     sink.connect(this.micCtx.destination);
+  }
+
+  /** Acquire the room audio stream: the microphone, or another tab's audio. */
+  private async captureStream(): Promise<MediaStream> {
+    if (this.config.captureSource === "tab") {
+      // getDisplayMedia needs video to offer the "share tab audio" checkbox; we
+      // keep only the audio track and discard the video.
+      const display = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true });
+      const [audioTrack] = display.getAudioTracks();
+      if (!audioTrack) {
+        display.getTracks().forEach((t) => t.stop());
+        throw new Error('No tab audio. Pick the room tab and enable "Share tab audio".');
+      }
+      display.getVideoTracks().forEach((t) => t.stop());
+      return new MediaStream([audioTrack]);
+    }
+
+    return navigator.mediaDevices.getUserMedia({
+      audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+    });
   }
 
   private onOpen(): void {

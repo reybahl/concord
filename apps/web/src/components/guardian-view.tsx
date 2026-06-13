@@ -26,6 +26,7 @@ import {
 } from "@/components/ui/card";
 import type { GuardianVerdict } from "@/lib/guardian";
 import {
+  type CaptureSource,
   GuardianSession,
   type GuardianStatus,
   type UtteranceDecision,
@@ -89,6 +90,7 @@ export function GuardianView({
   const [liveGuardian, setLiveGuardian] = useState("");
   const [learning, setLearning] = useState(false);
   const [learned, setLearned] = useState<string | null>(null);
+  const [captureSource, setCaptureSource] = useState<CaptureSource>("mic");
 
   const sessionRef = useRef<GuardianSession | null>(null);
 
@@ -157,6 +159,7 @@ export function GuardianView({
         model: data.model,
         voice: data.voice,
         instructions: data.instructions,
+        captureSource,
         onStatus: setStatus,
         onError: (m) => setError(m),
         onRoomUtterance: assess,
@@ -252,8 +255,9 @@ export function GuardianView({
         <CardContent className="flex flex-wrap items-center gap-3">
           {!active ? (
             <>
+              <SourceToggle value={captureSource} onChange={setCaptureSource} disabled={starting} />
               <Button onClick={startSession} disabled={starting}>
-                {starting ? <Loader2 className="animate-spin" /> : <Mic />}
+                {starting ? <Loader2 className="animate-spin" /> : captureSource === "tab" ? <AudioLines /> : <Mic />}
                 {starting ? "Starting…" : "Start listening"}
               </Button>
               <Button variant="outline" onClick={() => window.open("/room", "_blank", "noopener")}>
@@ -443,6 +447,38 @@ function Transcript({
       ))}
       {liveRoom && <TranscriptLine role="room" text={liveRoom} dim />}
       {liveGuardian && <TranscriptLine role="guardian" text={liveGuardian} dim />}
+    </div>
+  );
+}
+
+function SourceToggle({
+  value,
+  onChange,
+  disabled,
+}: {
+  value: CaptureSource;
+  onChange: (v: CaptureSource) => void;
+  disabled?: boolean;
+}) {
+  const options: { id: CaptureSource; label: string }[] = [
+    { id: "mic", label: "Microphone" },
+    { id: "tab", label: "Tab audio" },
+  ];
+  return (
+    <div className="inline-flex rounded-md border border-border/60 p-0.5" role="group" aria-label="Listen via">
+      {options.map((opt) => (
+        <button
+          key={opt.id}
+          type="button"
+          disabled={disabled}
+          onClick={() => onChange(opt.id)}
+          className={`rounded-[5px] px-3 py-1.5 text-xs font-medium transition-colors disabled:opacity-50 ${
+            value === opt.id ? "bg-secondary text-foreground" : "text-muted-foreground hover:text-foreground"
+          }`}
+        >
+          {opt.label}
+        </button>
+      ))}
     </div>
   );
 }
