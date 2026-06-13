@@ -1,5 +1,6 @@
 {
   "$schema": "https://turbo.build/schema.json",
+  "globalEnv": ["DATABASE_URL", "BLOB_READ_WRITE_TOKEN", "XAI_API_KEY"],
   "tasks": {
     "dev": {
       "cache": false,

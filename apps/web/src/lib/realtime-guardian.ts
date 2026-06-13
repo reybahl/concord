@@ -107,8 +107,7 @@ export class GuardianSession {
 
   stop(): void {
     this.closed = true;
-    for (const t of this.assessDebounce.values()) clearTimeout(t);
-    this.assessDebounce.clear();
+    this.flushPendingAssessments();
     this.roomClinicalDone.clear();
     this.processor?.disconnect();
     this.micSource?.disconnect();
@@ -349,13 +348,15 @@ export class GuardianSession {
 
   /** End the current turn: commit any unfinished tail, then start a fresh line namespace. */
   private resetRoomTurn(): void {
+    // ASR revisions debounce assessments; if the next turn starts before the timer
+    // fires, flush now so finalized sentences are not dropped on the floor.
+    this.flushPendingAssessments();
+
     const tail = this.roomTail.trim();
     if (tail) {
       this.config.onTranscript?.("room", tail, true, `${this.roomTurnSeq}:${this.roomSentences.length}`);
-      void this.enqueueAssessment(tail, this.roomFull);
+      if (this.shouldAssess(tail)) void this.enqueueAssessment(tail, this.roomFull);
     }
-    for (const t of this.assessDebounce.values()) clearTimeout(t);
-    this.assessDebounce.clear();
     this.roomTurnSeq += 1;
     this.roomItemId = null;
     this.roomFull = "";
@@ -363,6 +364,25 @@ export class GuardianSession {
     this.roomClinicalDone.clear();
     this.roomTail = "";
     this.config.onTranscript?.("room", "", false);
+  }
+
+  private shouldAssess(sentence: string): boolean {
+    return mightContainClinicalAction(sentence) || /\bconcord\b/i.test(sentence);
+  }
+
+  /** Run any debounced sentence assessments immediately (e.g. before turn rollover). */
+  private flushPendingAssessments(): void {
+    for (const t of this.assessDebounce.values()) clearTimeout(t);
+    this.assessDebounce.clear();
+    for (let i = 0; i < this.roomSentences.length; i++) this.assessSentenceAt(i);
+  }
+
+  private assessSentenceAt(index: number): void {
+    if (this.roomClinicalDone.has(index)) return;
+    const latest = this.roomSentences[index]?.trim();
+    if (!latest || !this.shouldAssess(latest)) return;
+    this.roomClinicalDone.add(index);
+    void this.enqueueAssessment(latest, this.roomFull);
   }
 
   /**
@@ -381,12 +401,7 @@ export class GuardianSession {
         i,
         setTimeout(() => {
           this.assessDebounce.delete(i);
-          if (this.roomClinicalDone.has(i)) return;
-          const latest = this.roomSentences[i]?.trim();
-          if (!latest) return;
-          if (!mightContainClinicalAction(latest) && !/\bconcord\b/i.test(latest)) return;
-          this.roomClinicalDone.add(i);
-          void this.enqueueAssessment(latest, this.roomFull);
+          this.assessSentenceAt(i);
         }, 900),
       );
     }

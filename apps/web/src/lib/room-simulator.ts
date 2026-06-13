@@ -15,7 +15,7 @@ export type RoomSpeaker = "doctor" | "patient";
 export type RoomStatus = "connecting" | RoomSpeaker | "idle" | "done";
 
 /** Native xAI TTS speed for the simulated visit so demos move along (pitch-preserving). */
-const OUTPUT_SPEED = 1.25;
+const OUTPUT_SPEED = 1.35;
 
 export interface RoomAnalysers {
   doctor: AnalyserNode;

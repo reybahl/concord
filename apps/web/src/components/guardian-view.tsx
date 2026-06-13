@@ -339,7 +339,7 @@ export function GuardianView({
 
       <div className="grid gap-6 lg:grid-cols-[1.3fr_1fr]">
         <div className="space-y-4">
-          {flagged.map((e) => e.verdict && <CatchCard key={e.id} verdict={e.verdict} record={record} />)}
+          {flagged.map((e) => e.verdict && <CatchCard key={e.id} verdict={e.verdict} />)}
           {cleared.map((e) => e.verdict && <ClearCard key={e.id} verdict={e.verdict} />)}
 
           <Card>
@@ -405,10 +405,8 @@ function ClearCard({ verdict }: { verdict: GuardianVerdict }) {
   );
 }
 
-function CatchCard({ verdict, record }: { verdict: GuardianVerdict; record: HealthRecord }) {
+function CatchCard({ verdict }: { verdict: GuardianVerdict }) {
   const sev = SEV[verdict.severity] ?? SEV.medium;
-  const sourceCount = record.sources.length;
-  const involved = new Set(verdict.conflictingFacts.map((f) => f.sourceLabel));
 
   return (
     <Card className={`border-2 ${sev.cls.split(" ")[0]}`}>
@@ -441,27 +439,6 @@ function CatchCard({ verdict, record }: { verdict: GuardianVerdict; record: Heal
             </blockquote>
           ))}
         </div>
-
-        {verdict.unseenBy && (
-          <div className="border border-amber-500/30 bg-amber-500/5 p-3">
-            <div className="text-xs font-medium uppercase tracking-wide text-amber-300">
-              Why no one in the room could catch this
-            </div>
-            <p className="mt-1 text-[13px] leading-6">{verdict.unseenBy}</p>
-            <div className="mt-2 flex flex-wrap items-center gap-3 text-[11px] text-muted-foreground">
-              <span>
-                Concord reconciled <span className="font-medium text-foreground">{record.medications.length}</span> meds
-                across <span className="font-medium text-foreground">{sourceCount}</span>{" "}
-                {sourceCount === 1 ? "source" : "sources"}
-              </span>
-              <span aria-hidden>·</span>
-              <span>
-                Conflict spans{" "}
-                <span className="font-medium text-foreground">{[...involved].join(" + ") || "multiple sources"}</span>
-              </span>
-            </div>
-          </div>
-        )}
 
         {verdict.safeAlternative && (
           <div className="flex items-start gap-2 border border-emerald-500/30 bg-emerald-500/5 p-3">
