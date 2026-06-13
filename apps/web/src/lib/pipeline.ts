@@ -1,4 +1,4 @@
-import { DEMO_DOCS } from "./demo-documents";
+import { loadSourceDocuments } from "./load-data";
 import { hasXai } from "./grok";
 import { MOCK_RECORD } from "./mock-record";
 import type { HealthRecord, PipelineEvent, SourceDoc } from "./types";
@@ -68,9 +68,10 @@ const STAGES: StageDef[] = [
  * without changing this event contract or the UI.
  */
 export async function* runPipeline(
-  docs: SourceDoc[] = DEMO_DOCS,
+  docs?: SourceDoc[],
 ): AsyncGenerator<PipelineEvent> {
-  const record: HealthRecord = { ...MOCK_RECORD, sources: docs };
+  const sources = docs ?? (await loadSourceDocuments());
+  const record: HealthRecord = { ...MOCK_RECORD, sources };
 
   for (const s of STAGES) {
     yield { type: "stage", stage: s.stage, label: s.label, status: "start" };
@@ -80,7 +81,7 @@ export async function* runPipeline(
       stage: s.stage,
       label: s.label,
       status: "done",
-      detail: s.detail(docs, record),
+      detail: s.detail(sources, record),
     };
   }
 

@@ -1,4 +1,3 @@
-import { DEMO_DOCS } from "./demo-documents";
 import type { HealthRecord } from "./types";
 
 /**
@@ -9,7 +8,7 @@ import type { HealthRecord } from "./types";
  */
 export const MOCK_RECORD: HealthRecord = {
   patient: { name: "Maria Elena Gonzalez", dob: "1968-03-14", sex: "female" },
-  sources: DEMO_DOCS,
+  sources: [],
   medications: [
     {
       id: "med-metformin",

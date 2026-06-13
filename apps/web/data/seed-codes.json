@@ -1,0 +1,190 @@
+{
+  "_README": "Illustrative seed vocabulary for the Concord demo. These codes cover ONLY the entities present in the 5 demo documents so reconciliation/coding is fast and accurate on stage. RxNorm/LOINC/SNOMED/ICD-10 values are real-world plausible and the well-known ones (HbA1c 4548-4, creatinine 2160-0, T2DM E11.9/44054006, penicillin allergy 91936005) are correct; verify any code against the live RxNav (RxNorm), LOINC, and UMLS APIs before relying on it in production. NDCs are correctly formatted but illustrative.",
+
+  "patient_identity": {
+    "canonical": { "given": "Maria", "middle": "Elena", "family": "Gonzalez", "dob": "1968-03-14", "sex": "female" },
+    "aliases_across_sources": [
+      { "source": "PCP (Bay Area Family Medicine)", "name": "GONZALEZ, MARIA E.", "id": "BAFM-0102374" },
+      { "source": "Cardiology (Pacific Heart)",      "name": "Maria E. Gonzales", "id": "PHA-558210", "note": "surname misspelled Gonzales" },
+      { "source": "Urgent Care (QuickCare)",          "name": "Maria Gonzalez",    "id": "QC-2026-44817" },
+      { "source": "Lab (Meridian)",                   "name": "Gonzalez, Maria",   "id": "MRL-9931247" },
+      { "source": "Pharmacy (CVS #6648)",             "name": "MARIA E GONZALEZ",  "id": "CVS-SF-0048812" }
+    ],
+    "matching_note": "No universal patient identifier. Five different MRNs + a surname spelling variant (Gonzalez/Gonzales) is the real-world entity-resolution / patient-matching problem (Fellegi-Sunter probabilistic linkage). Match on DOB + name similarity + demographics."
+  },
+
+  "medications": [
+    {
+      "canonical_display": "Metformin hydrochloride 500 MG Oral Tablet",
+      "rxnorm_scd": "861007",
+      "ingredient_rxcui": "6809",
+      "aliases": ["Metformin HCl 500 mg tablet", "Glucophage 500 mg", "METFORMIN HCL 500MG TAB", "metformin"],
+      "example_ndc": "00093-7214-01",
+      "appears_in": ["PCP", "Cardiology (as Glucophage)", "Urgent Care (vague)", "Pharmacy (NDC)"],
+      "sig": "1 tablet PO twice daily with meals"
+    },
+    {
+      "canonical_display": "Lisinopril 10 MG Oral Tablet",
+      "rxnorm_scd": "314076",
+      "ingredient_rxcui": "29046",
+      "aliases": ["Lisinopril 10 mg tablet", "Zestril 10 mg", "LISINOPRIL 10MG TAB"],
+      "example_ndc": "68180-0518-01",
+      "appears_in": ["PCP", "Cardiology (as Zestril)", "Pharmacy (NDC)"],
+      "sig": "1 tablet PO once daily",
+      "reconciliation_flag": "DUPLICATE-THERAPY RISK: PCP 'Lisinopril' and Cardiology 'Zestril' are the SAME drug (brand vs generic). A naive system treats them as two drugs."
+    },
+    {
+      "canonical_display": "Simvastatin 20 MG Oral Tablet",
+      "rxnorm_scd": "312962",
+      "ingredient_rxcui": "36567",
+      "aliases": ["Simvastatin 20 mg tablet", "Simvastatin 20 mg PO QHS", "SIMVASTATIN 20MG TAB", "cholesterol pill"],
+      "example_ndc": "00093-7155-98",
+      "appears_in": ["PCP", "Cardiology", "Pharmacy (NDC)"],
+      "sig": "1 tablet PO at bedtime"
+    },
+    {
+      "canonical_display": "Aspirin 81 MG Delayed Release Oral Tablet",
+      "rxnorm_scd": "243670",
+      "ingredient_rxcui": "1191",
+      "aliases": ["ASA 81 mg", "ASPIRIN 81MG EC TAB"],
+      "example_ndc": "00904-2013-60",
+      "appears_in": ["Cardiology", "Pharmacy (NDC)"],
+      "sig": "1 tablet PO once daily"
+    },
+    {
+      "canonical_display": "Hydrochlorothiazide 25 MG Oral Tablet",
+      "rxnorm_scd": "310798",
+      "ingredient_rxcui": "5487",
+      "aliases": ["HCTZ 25 mg", "Hydrochlorothiazide 25 mg", "HYDROCHLOROTHIAZIDE 25MG TAB"],
+      "example_ndc": "00378-0016-01",
+      "appears_in": ["Cardiology", "Pharmacy (NDC)"],
+      "sig": "1 tablet PO once daily"
+    },
+    {
+      "canonical_display": "Clarithromycin 500 MG Oral Tablet",
+      "rxnorm_scd": "205671",
+      "ingredient_rxcui": "21212",
+      "aliases": ["Clarithromycin 500 mg", "CLARITHROMYCIN 500MG TAB"],
+      "example_ndc": "00074-2586-13",
+      "appears_in": ["Urgent Care", "Pharmacy (NDC)"],
+      "sig": "1 tablet PO every 12 hours x 7 days (acute course, started 2026-05-22)"
+    }
+  ],
+
+  "labs": [
+    {
+      "canonical": "Hemoglobin A1c",
+      "loinc_ngsp_percent": "4548-4",
+      "loinc_ifcc_mmol_mol": "59261-8",
+      "unit_normalization": "IFCC mmol/mol -> NGSP %: pct = (0.09148 * mmol_mol) + 2.152. (52 mmol/mol ~= 6.9%).",
+      "demo_series": [
+        { "date": "2026-02-08", "value": 6.1, "unit": "%",        "source": "PCP" },
+        { "date": "2026-04-08", "value": 6.5, "unit": "%",        "source": "Cardiology (POC)" },
+        { "date": "2026-05-28", "value": 52,  "unit": "mmol/mol", "source": "Lab (IFCC)", "normalized_pct": 6.9 }
+      ],
+      "trend": "RISING 6.1 -> 6.5 -> 6.9% over ~4 months. Requires unit normalization to even see the trend."
+    },
+    { "canonical": "LDL cholesterol (calculated)", "loinc": "13457-7", "demo_series": [
+        { "date": "2026-02-08", "value": 138, "unit": "mg/dL", "source": "PCP" },
+        { "date": "2026-05-28", "value": 152, "unit": "mg/dL", "source": "Lab" } ],
+      "trend": "RISING and above goal (<100) despite simvastatin -> statin not at goal." },
+    { "canonical": "Creatinine, serum", "loinc": "2160-0", "demo_series": [
+        { "date": "2026-02-08", "value": 0.9, "unit": "mg/dL", "source": "PCP" },
+        { "date": "2026-05-28", "value": 1.2, "unit": "mg/dL", "source": "Lab" } ] },
+    { "canonical": "eGFR (CKD-EPI 2021)", "loinc": "98979-8", "demo_series": [
+        { "date": "2026-02-08", "value": null, "unit": "mL/min/1.73m2", "source": "PCP", "reported": ">60" },
+        { "date": "2026-05-28", "value": 58,   "unit": "mL/min/1.73m2", "source": "Lab" } ],
+      "trend": "DECLINING into CKD G3a range (45-59). Relevant to metformin safety + lisinopril/HCTZ + potassium." },
+    { "canonical": "Potassium, serum", "loinc": "2823-3", "demo_series": [
+        { "date": "2026-05-28", "value": 4.9, "unit": "mmol/L", "source": "Lab" } ] },
+    { "canonical": "Glucose, fasting", "loinc": "1558-6" },
+    { "canonical": "Cholesterol, total", "loinc": "2093-3" },
+    { "canonical": "HDL cholesterol", "loinc": "2085-9" },
+    { "canonical": "Triglycerides", "loinc": "2571-8" },
+    { "canonical": "Blood pressure systolic", "loinc": "8480-6" },
+    { "canonical": "Blood pressure diastolic", "loinc": "8462-4" }
+  ],
+
+  "conditions": [
+    { "display": "Type 2 diabetes mellitus", "icd10": "E11.9", "snomed": "44054006" },
+    { "display": "Essential hypertension", "icd10": "I10", "snomed": "59621000" },
+    { "display": "Mixed hyperlipidemia", "icd10": "E78.2", "snomed": "267434003" },
+    { "display": "Acute bronchitis", "icd10": "J20.9", "snomed": "10509002", "note": "acute/transient (May 2026)" },
+    { "display": "Chronic kidney disease, stage 3a (emerging)", "icd10": "N18.31", "snomed": "700378005", "note": "inferred from eGFR 58 trend; NOT yet coded by any provider -> potential care gap" }
+  ],
+
+  "allergies": [
+    {
+      "display": "Allergy to penicillin",
+      "snomed": "91936005",
+      "reaction": "rash",
+      "representations_across_sources": [
+        { "source": "PCP", "as": "PENICILLIN -- rash (free text)" },
+        { "source": "Urgent Care", "as": "PCN -> rash (abbreviation in narrative)" },
+        { "source": "Cardiology", "as": "NOT ON FILE (dropped!)" },
+        { "source": "Pharmacy", "as": "no allergy data maintained" }
+      ],
+      "semantic_note": "Same allergy appears as free text, an abbreviation, and is MISSING from cardiology + pharmacy. A reconciled record must carry it everywhere."
+    }
+  ],
+
+  "expected_insights": [
+    {
+      "kind": "interaction",
+      "severity": "high",
+      "title": "Clarithromycin + Simvastatin -- contraindicated combination",
+      "why": "Clarithromycin (CYP3A4 inhibitor) markedly raises simvastatin levels -> risk of myopathy/rhabdomyolysis. Label-contraindicated.",
+      "cross_provider": "Urgent care (QuickCare, 05/22) prescribed clarithromycin WITHOUT the med list; simvastatin was prescribed by PCP. No single system saw both.",
+      "related_facts": ["Clarithromycin 500 MG (RxNorm 205671)", "Simvastatin 20 MG (RxNorm 312962)"]
+    },
+    {
+      "kind": "duplicate_therapy",
+      "severity": "medium",
+      "title": "Lisinopril and Zestril are the same drug",
+      "why": "PCP lists generic 'Lisinopril 10 mg'; cardiology lists brand 'Zestril 10 mg'. Treated as separate, the patient risks a double dose of one ACE inhibitor.",
+      "related_facts": ["Lisinopril 10 MG (RxNorm 314076)"]
+    },
+    {
+      "kind": "lab_trend",
+      "severity": "medium",
+      "title": "Worsening glycemic control (A1c 6.1 -> 6.5 -> 6.9%)",
+      "why": "Only visible after normalizing the most recent result from IFCC mmol/mol (52) to NGSP % (6.9). Suggests treatment intensification discussion.",
+      "related_facts": ["HbA1c 4548-4 / 59261-8"]
+    },
+    {
+      "kind": "lab_trend",
+      "severity": "medium",
+      "title": "Declining kidney function (eGFR >60 -> 58; creatinine 0.9 -> 1.2)",
+      "why": "Emerging CKD G3a affects metformin safety and ACEi/thiazide/potassium management. Not yet acknowledged in any provider's problem list.",
+      "related_facts": ["eGFR 98979-8", "Creatinine 2160-0"]
+    },
+    {
+      "kind": "lab_trend",
+      "severity": "low",
+      "title": "LDL above goal on simvastatin (138 -> 152 mg/dL)",
+      "why": "LDL rising and >100 despite therapy -> statin not at goal.",
+      "related_facts": ["LDL 13457-7"]
+    },
+    {
+      "kind": "care_gap",
+      "severity": "medium",
+      "title": "Overdue diabetic retinal eye exam",
+      "why": "Recommended annually for diabetes; none on file per PCP health-maintenance section.",
+      "related_facts": ["Type 2 diabetes E11.9"]
+    },
+    {
+      "kind": "care_gap",
+      "severity": "medium",
+      "title": "Overdue colorectal cancer screening",
+      "why": "USPSTF recommends screening ages 45-75; none on file. Patient is 58.",
+      "related_facts": []
+    },
+    {
+      "kind": "care_gap",
+      "severity": "low",
+      "title": "Missing urine albumin-creatinine ratio (diabetic kidney screen)",
+      "why": "Recommended for diabetic kidney monitoring, especially with declining eGFR; not on file.",
+      "related_facts": ["Type 2 diabetes E11.9", "eGFR 98979-8"]
+    }
+  ]
+}

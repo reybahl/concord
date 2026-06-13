@@ -1,0 +1,56 @@
+================================================================================
+                       BAY AREA FAMILY MEDICINE
+                 2280 Geary Blvd, Suite 310, San Francisco, CA 94115
+                  Tel (415) 555-0142   Fax (415) 555-0143
+================================================================================
+                         AFTER VISIT SUMMARY
+--------------------------------------------------------------------------------
+Patient: GONZALEZ, MARIA E.                         MRN: BAFM-0102374
+DOB: 03/14/1968 (Age 58)   Sex: Female              Acct: 7741202
+Date of Visit: 02/10/2026                           Provider: Susan T. Okafor, MD
+Visit Type: Chronic care follow-up                  NPI: 1487602935
+--------------------------------------------------------------------------------
+
+REASON FOR VISIT
+  Routine follow-up of type 2 diabetes, high blood pressure, and cholesterol.
+
+VITALS
+  BP 138/86 mmHg   HR 78   Temp 98.4F   Wt 184 lb   Ht 5'4"   BMI 31.6
+
+ACTIVE PROBLEM LIST
+  1. Type 2 diabetes mellitus without complications        (E11.9)
+  2. Essential (primary) hypertension                      (I10)
+  3. Mixed hyperlipidemia                                  (E78.2)
+
+ALLERGIES
+  PENICILLIN -- reaction: rash (documented by patient report)
+  No other known drug allergies.
+
+CURRENT MEDICATIONS (reviewed today)
+  - Metformin HCl 500 mg tablet -- take 1 tablet by mouth TWICE daily with meals
+  - Lisinopril 10 mg tablet -- take 1 tablet by mouth once daily
+  - Simvastatin 20 mg tablet -- take 1 tablet by mouth at bedtime
+
+RECENT LABORATORY RESULTS (collected 02/08/2026)
+  Hemoglobin A1c .......... 6.1 %        (ref < 5.7; prediabetes 5.7-6.4)
+  LDL cholesterol ......... 138 mg/dL    (goal < 100)
+  HDL cholesterol .......... 44 mg/dL
+  Triglycerides ........... 180 mg/dL
+  Creatinine, serum ....... 0.9 mg/dL    (ref 0.6-1.1)
+  eGFR .................... > 60 mL/min/1.73m2
+
+ASSESSMENT & PLAN
+  - Diabetes: A1c at upper end of prediabetic range; continue metformin, reinforce
+    diet/exercise. Recheck A1c in 3 months.
+  - Hypertension: BP slightly above goal. Continue lisinopril. Home BP log.
+  - Lipids: LDL above goal on simvastatin. Continue current dose, recheck lipids.
+
+HEALTH MAINTENANCE -- DUE / OVERDUE
+  [ DUE ]  Diabetic retinal eye exam (dilated) -- last on file: none
+  [ DUE ]  Colorectal cancer screening -- last on file: none
+  [OVERDUE] Urine albumin-creatinine ratio (diabetic kidney screen)
+
+  Return to clinic in 3 months, or sooner if concerns.
+--------------------------------------------------------------------------------
+  This summary reflects information in your Bay Area Family Medicine chart only.
+================================================================================
