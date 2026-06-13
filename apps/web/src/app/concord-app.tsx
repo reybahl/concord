@@ -25,6 +25,7 @@ import type {
   HealthRecord,
   Insight,
   MedicationFact,
+  NoteEvent,
   PipelineEvent,
   Severity,
   StageEvent,
@@ -42,11 +43,17 @@ interface UploadedDocument {
   createdAt: string;
 }
 
+interface LiveNote {
+  text: string;
+  tone?: "info" | "merge" | "flag" | "model";
+}
+
 interface LiveStage {
   stage: string;
   label: string;
   status: "start" | "done";
   detail?: string;
+  notes: LiveNote[];
 }
 
 const SEVERITY: Record<Severity, { ring: string; text: string; bg: string; label: string }> = {
@@ -100,6 +107,8 @@ export function ConcordApp() {
   }, []);
 
   useEffect(() => {
+    // Standard fetch-on-mount: load the session's uploaded documents once.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     void refreshDocuments();
   }, [refreshDocuments]);
 
@@ -168,13 +177,14 @@ export function ConcordApp() {
 
       for (const line of lines) {
         if (!line.trim()) continue;
-        const event = JSON.parse(line) as PipelineEvent | { type: "error"; message: string };
+        const event = JSON.parse(line) as PipelineEvent;
         if (event.type === "error") {
           setActionError(event.message);
           setStatus("idle");
           return;
         }
         if (event.type === "stage") applyStage(event);
+        else if (event.type === "note") applyNote(event);
         else if (event.type === "result") setRecord(event.record);
       }
     }
@@ -189,7 +199,23 @@ export function ConcordApp() {
           s.stage === event.stage ? { ...s, status: event.status, detail: event.detail ?? s.detail } : s,
         );
       }
-      return [...prev, { stage: event.stage, label: event.label, status: event.status, detail: event.detail }];
+      return [
+        ...prev,
+        { stage: event.stage, label: event.label, status: event.status, detail: event.detail, notes: [] },
+      ];
+    });
+  }
+
+  function applyNote(event: NoteEvent) {
+    setStages((prev) => {
+      const existing = prev.find((s) => s.stage === event.stage);
+      const note: LiveNote = { text: event.text, tone: event.tone };
+      if (existing) {
+        return prev.map((s) =>
+          s.stage === event.stage ? { ...s, notes: [...s.notes, note] } : s,
+        );
+      }
+      return [...prev, { stage: event.stage, label: event.stage, status: "start", notes: [note] }];
     });
   }
 
@@ -456,6 +482,13 @@ function IdleHint({
   );
 }
 
+const NOTE_TONE: Record<NonNullable<LiveNote["tone"]>, string> = {
+  info: "text-slate-400 border-white/10",
+  model: "text-sky-300 border-sky-500/30",
+  merge: "text-emerald-300 border-emerald-500/30",
+  flag: "text-amber-300 border-amber-500/40",
+};
+
 function Pipeline({ stages }: { stages: LiveStage[] }) {
   return (
     <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-5">
@@ -470,11 +503,23 @@ function Pipeline({ stages }: { stages: LiveStage[] }) {
                 <Loader2 className="size-5 animate-spin text-sky-400" />
               )}
             </span>
-            <div>
+            <div className="min-w-0 flex-1">
               <div className={`text-sm ${s.status === "done" ? "text-slate-200" : "text-slate-100"}`}>
                 {s.label}
               </div>
               {s.detail && <div className="text-xs text-slate-400">{s.detail}</div>}
+              {s.notes.length > 0 && (
+                <ul className="mt-1.5 space-y-1">
+                  {s.notes.map((n, i) => (
+                    <li
+                      key={i}
+                      className={`border-l-2 pl-2 text-xs leading-relaxed ${NOTE_TONE[n.tone ?? "info"]}`}
+                    >
+                      {n.text}
+                    </li>
+                  ))}
+                </ul>
+              )}
             </div>
           </li>
         ))}

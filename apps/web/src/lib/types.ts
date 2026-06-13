@@ -116,9 +116,22 @@ export interface StageEvent {
   detail?: string;
 }
 
+/** A line of real-time substance emitted under a stage (a merge, a normalization, a finding). */
+export interface NoteEvent {
+  type: "note";
+  stage: string;
+  text: string;
+  tone?: "info" | "merge" | "flag" | "model";
+}
+
 export interface ResultEvent {
   type: "result";
   record: HealthRecord;
 }
 
-export type PipelineEvent = StageEvent | ResultEvent;
+export interface ErrorEvent {
+  type: "error";
+  message: string;
+}
+
+export type PipelineEvent = StageEvent | NoteEvent | ResultEvent | ErrorEvent;
