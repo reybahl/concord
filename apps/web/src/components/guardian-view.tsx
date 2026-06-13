@@ -4,6 +4,7 @@ import {
   AudioLines,
   CheckCircle2,
   Ear,
+  ExternalLink,
   Loader2,
   Mic,
   Save,
@@ -244,15 +245,21 @@ export function GuardianView({
           <CardDescription className="max-w-2xl text-[13px] leading-6">
             A point-of-care safety layer for {record.patient.name}. It stays silent, listens to the room,
             and interrupts only when a proposed medication or order conflicts with the reconciled,
-            cross-provider record.
+            cross-provider record. Open the simulated room in another tab to hear a doctor and patient
+            talk it through while the Guardian listens.
           </CardDescription>
         </CardHeader>
         <CardContent className="flex flex-wrap items-center gap-3">
           {!active ? (
-            <Button onClick={startSession} disabled={starting}>
-              {starting ? <Loader2 className="animate-spin" /> : <Mic />}
-              {starting ? "Starting…" : "Start listening"}
-            </Button>
+            <>
+              <Button onClick={startSession} disabled={starting}>
+                {starting ? <Loader2 className="animate-spin" /> : <Mic />}
+                {starting ? "Starting…" : "Start listening"}
+              </Button>
+              <Button variant="outline" onClick={() => window.open("/room", "_blank", "noopener")}>
+                <ExternalLink /> Open simulated room
+              </Button>
+            </>
           ) : (
             <Button variant="outline" onClick={endSession}>
               <Square /> End visit
