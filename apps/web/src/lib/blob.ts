@@ -39,6 +39,11 @@ export async function putBlob(
 }
 
 export async function getBlobText(url: string): Promise<string> {
+  const buffer = await getBlobBytes(url);
+  return buffer.toString("utf-8");
+}
+
+export async function getBlobBytes(url: string): Promise<Buffer> {
   const result = await get(url, {
     access: "private",
     token: requireBlobToken(),
@@ -46,7 +51,8 @@ export async function getBlobText(url: string): Promise<string> {
   if (!result || result.statusCode !== 200 || !result.stream) {
     throw new Error(`Failed to read blob: ${url}`);
   }
-  return new Response(result.stream).text();
+  const arrayBuffer = await new Response(result.stream).arrayBuffer();
+  return Buffer.from(arrayBuffer);
 }
 
 export async function deleteBlob(url: string): Promise<void> {

@@ -612,11 +612,6 @@ function OverviewView({
       {reconciledLabel && (
         <p className="text-xs text-muted-foreground">
           Last reconciled {reconciledLabel}
-          {record?.meta?.pipeline === "live" && (
-            <Badge variant="outline" className="ml-2">
-              Live Grok
-            </Badge>
-          )}
         </p>
       )}
 
@@ -720,7 +715,7 @@ function UploadView({
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <p className="text-sm text-muted-foreground">
-            Drop visit summaries, lab reports, and pharmacy printouts (.txt).
+            Drop visit summaries, lab reports, and pharmacy printouts (.txt or .pdf).
           </p>
         </div>
         <Button onClick={onRun} disabled={status === "running" || !canReconcile}>
@@ -900,7 +895,7 @@ function UploadPanel({
           } ${disabled ? "opacity-50" : ""}`}
         >
           <Upload className="mx-auto size-6 text-muted-foreground" />
-          <p className="mt-2 text-sm">Drop .txt medical records here</p>
+          <p className="mt-2 text-sm">Drop medical records here</p>
           <p className="mt-1 text-xs text-muted-foreground">or</p>
           <Button
             type="button"
@@ -915,7 +910,7 @@ function UploadPanel({
           <input
             ref={fileInputRef}
             type="file"
-            accept=".txt,.md,text/plain,text/markdown"
+            accept=".txt,.md,.pdf,text/plain,text/markdown,application/pdf"
             multiple
             className="hidden"
             onChange={(e) => {
@@ -954,6 +949,10 @@ function documentViewUrl(documentId: string) {
   return `/api/documents/${documentId}?inline=1`;
 }
 
+function isPdfDocument(doc: UploadedDocument) {
+  return doc.mimeType === "application/pdf";
+}
+
 function DocumentListItem({
   doc,
   disabled,
@@ -972,6 +971,8 @@ function DocumentListItem({
 
   async function loadPreview() {
     setPreviewOpen(true);
+    if (isPdfDocument(doc)) return;
+
     if (loadingPreview) return;
     if (previewText !== null && !previewError) return;
 
@@ -1045,7 +1046,13 @@ function DocumentListItem({
             </SheetDescription>
           </SheetHeader>
           <div className="min-h-0 flex-1 overflow-auto px-4 py-3">
-            {loadingPreview ? (
+            {isPdfDocument(doc) ? (
+              <iframe
+                src={documentViewUrl(doc.id)}
+                title={doc.filename}
+                className="h-full min-h-[70vh] w-full border bg-white"
+              />
+            ) : loadingPreview ? (
               <div className="flex items-center gap-2 text-sm text-muted-foreground">
                 <Loader2 className="size-4 animate-spin" /> Loading…
               </div>

@@ -25,7 +25,11 @@ export const ExtractionSchema = z.object({
       name: z.string().describe("Drug as written, including brand names (e.g. 'Zestril 10 mg')."),
       dose: z.string().nullable(),
       sig: z.string().nullable().describe("Directions, e.g. '1 tab PO BID'."),
-      textSpan: z.string().describe("Exact verbatim substring this came from. Copy character-for-character."),
+      textSpan: z
+        .string()
+        .describe(
+          "Verbatim excerpt from the source document (text substring or PDF quote). Copy character-for-character.",
+        ),
     }),
   ),
   labs: z.array(
@@ -34,21 +38,33 @@ export const ExtractionSchema = z.object({
       value: z.string().nullable().describe("Keep as written, e.g. '52', '>60', '6.1'."),
       unit: z.string().nullable(),
       date: z.string().nullable().describe("ISO date if determinable, else null."),
-      textSpan: z.string(),
+      textSpan: z
+        .string()
+        .describe(
+          "Verbatim excerpt from the source document (text substring or PDF quote). Copy character-for-character.",
+        ),
     }),
   ),
   conditions: z.array(
     z.object({
       name: z.string(),
       code: z.string().nullable().describe("ICD-10/SNOMED if explicitly printed in the doc, else null."),
-      textSpan: z.string(),
+      textSpan: z
+        .string()
+        .describe(
+          "Verbatim excerpt from the source document (text substring or PDF quote). Copy character-for-character.",
+        ),
     }),
   ),
   allergies: z.array(
     z.object({
       substance: z.string(),
       reaction: z.string().nullable(),
-      textSpan: z.string(),
+      textSpan: z
+        .string()
+        .describe(
+          "Verbatim excerpt from the source document (text substring or PDF quote). Copy character-for-character.",
+        ),
     }),
   ),
 });

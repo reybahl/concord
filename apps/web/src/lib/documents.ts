@@ -4,19 +4,22 @@ import { and, asc, eq, inArray } from "drizzle-orm";
 import {
   buildBlobPathname,
   deleteBlob,
+  getBlobBytes,
   getBlobText,
   isBlobConfigured,
   putBlob,
 } from "./blob";
+import { isPdfMimeType } from "./mime";
 import type { SourceDoc } from "./types";
 
 export const MAX_FILE_BYTES = 5 * 1024 * 1024;
 export const MAX_FILES_PER_SESSION = 20;
 
-const TEXT_MIME_TYPES = new Set([
+const ALLOWED_MIME_TYPES = new Set([
   "text/plain",
   "text/markdown",
   "text/x-markdown",
+  "application/pdf",
   "application/octet-stream",
 ]);
 
@@ -46,12 +49,24 @@ function labelFromFilename(filename: string): string {
   return base.replace(/[-_]+/g, " ").trim() || filename;
 }
 
-function assertTextUpload(file: File) {
-  const ext = file.name.split(".").pop()?.toLowerCase();
-  const mimeOk = TEXT_MIME_TYPES.has(file.type) || file.type === "";
-  const extOk = ext === "txt" || ext === "md";
+function fileExtension(filename: string): string | undefined {
+  return filename.split(".").pop()?.toLowerCase();
+}
+
+function resolveMimeType(filename: string, fileType: string): string {
+  if (fileType && fileType !== "application/octet-stream") return fileType;
+  const ext = fileExtension(filename);
+  if (ext === "pdf") return "application/pdf";
+  if (ext === "md") return "text/markdown";
+  return "text/plain";
+}
+
+function assertAllowedUpload(file: File) {
+  const ext = fileExtension(file.name);
+  const extOk = ext === "txt" || ext === "md" || ext === "pdf";
+  const mimeOk = ALLOWED_MIME_TYPES.has(file.type) || file.type === "";
   if (!mimeOk && !extOk) {
-    throw new Error("Only .txt and .md files are supported for now.");
+    throw new Error("Supported formats: .txt, .md, and .pdf");
   }
   if (file.size > MAX_FILE_BYTES) {
     throw new Error(`File too large (max ${MAX_FILE_BYTES / (1024 * 1024)} MB).`);
@@ -76,7 +91,7 @@ export async function uploadDocument(
   file: File,
   system?: string | null,
 ): Promise<UploadedDocumentDto> {
-  assertTextUpload(file);
+  assertAllowedUpload(file);
 
   const existing = await listUploadedDocuments(sessionId);
   if (existing.length >= MAX_FILES_PER_SESSION) {
@@ -86,7 +101,7 @@ export async function uploadDocument(
   const documentId = crypto.randomUUID();
   const buffer = Buffer.from(await file.arrayBuffer());
   const pathname = buildBlobPathname(sessionId, documentId, file.name);
-  const mimeType = file.type || "text/plain";
+  const mimeType = resolveMimeType(file.name, file.type);
 
   const blobUrl = await putBlob(pathname, buffer, mimeType);
 
@@ -116,7 +131,12 @@ export async function uploadDocument(
 export async function getUploadedDocumentContent(
   sessionId: string,
   documentId: string,
-): Promise<{ document: UploadedDocumentDto; text: string }> {
+): Promise<{
+  document: UploadedDocumentDto;
+  text: string;
+  bytes: Buffer;
+  isPdf: boolean;
+}> {
   const [row] = await requireDb()
     .select()
     .from(sourceDocuments)
@@ -124,8 +144,11 @@ export async function getUploadedDocumentContent(
 
   if (!row) throw new Error("Document not found.");
 
-  const text = await getBlobText(row.blobUrl);
-  return { document: toDto(row), text };
+  const bytes = await getBlobBytes(row.blobUrl);
+  const isPdf = isPdfMimeType(row.mimeType);
+  const text = isPdf ? "" : bytes.toString("utf-8");
+
+  return { document: toDto(row), text, bytes, isPdf };
 }
 
 export async function deleteUploadedDocument(sessionId: string, documentId: string): Promise<void> {
@@ -160,13 +183,19 @@ export async function loadSourceDocumentsForSession(
   }
 
   return Promise.all(
-    rows.map(async (row) => ({
-      id: row.id,
-      label: row.label,
-      system: row.system ?? "Unknown source",
-      date: row.createdAt.toISOString().slice(0, 10),
-      text: await getBlobText(row.blobUrl),
-    })),
+    rows.map(async (row) => {
+      const isPdf = isPdfMimeType(row.mimeType);
+      return {
+        id: row.id,
+        label: row.label,
+        filename: row.filename,
+        system: row.system ?? "Unknown source",
+        date: row.createdAt.toISOString().slice(0, 10),
+        mimeType: row.mimeType,
+        blobUrl: row.blobUrl,
+        text: isPdf ? "" : await getBlobText(row.blobUrl),
+      };
+    }),
   );
 }
 

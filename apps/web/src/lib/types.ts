@@ -92,9 +92,15 @@ export interface Insight {
 export interface SourceDoc {
   id: string;
   label: string;
+  /** Original filename when loaded from storage (used for xAI file upload). */
+  filename?: string;
   system: string;
   date?: string;
+  /** Plain text for .txt/.md sources; empty when Grok reads the PDF directly. */
   text: string;
+  mimeType?: string;
+  /** Server-only blob URL for re-reading PDF bytes during extraction. */
+  blobUrl?: string;
 }
 
 export interface WebSource {

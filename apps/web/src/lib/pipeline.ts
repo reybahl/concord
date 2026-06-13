@@ -201,6 +201,11 @@ function toProvenance(
   }));
 }
 
+function stripInternalSourceFields(doc: SourceDoc): SourceDoc {
+  const { blobUrl: _blobUrl, ...rest } = doc;
+  return rest;
+}
+
 function toHealthRecord(
   r: Reconciled,
   sources: SourceDoc[],
@@ -263,7 +268,7 @@ function toHealthRecord(
       dob: r.patient.dob ?? undefined,
       sex: r.patient.sex ?? undefined,
     },
-    sources,
+    sources: sources.map(stripInternalSourceFields),
     medications,
     labs,
     conditions,
@@ -321,7 +326,7 @@ const OFFLINE_STAGES: { stage: string; label: string; detail: (r: HealthRecord) 
 async function* runOffline(docs: SourceDoc[], reason: string | null): AsyncGenerator<PipelineEvent> {
   const record: HealthRecord = {
     ...MOCK_RECORD,
-    sources: docs,
+    sources: docs.map(stripInternalSourceFields),
     meta: { pipeline: "fallback" },
   };
   if (reason) yield { type: "note", stage: "ingest", tone: "flag", text: reason };

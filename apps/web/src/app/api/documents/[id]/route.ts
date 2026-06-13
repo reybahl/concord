@@ -20,19 +20,24 @@ export async function GET(
 
     const { id } = await params;
     const sessionId = await getOrCreateSessionId();
-    const { document, text } = await getUploadedDocumentContent(sessionId, id);
+    const { document, text, bytes, isPdf } = await getUploadedDocumentContent(sessionId, id);
 
     if (new URL(req.url).searchParams.get("inline") === "1") {
-      return new Response(text, {
+      const body = isPdf ? new Uint8Array(bytes) : text;
+      const contentType = isPdf
+        ? "application/pdf"
+        : `${document.mimeType}; charset=utf-8`;
+
+      return new Response(body, {
         headers: {
-          "Content-Type": `${document.mimeType}; charset=utf-8`,
+          "Content-Type": contentType,
           "Content-Disposition": `inline; filename="${document.filename.replace(/"/g, "")}"`,
           "Cache-Control": "private, no-store",
         },
       });
     }
 
-    return apiOk({ document, text });
+    return apiOk({ document, text, isPdf });
   } catch (err) {
     return apiError((err as Error).message, 404);
   }
