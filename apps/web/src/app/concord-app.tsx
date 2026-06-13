@@ -21,6 +21,7 @@ import {
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { AppSidebar, type DashboardView } from "@/components/app-sidebar";
+import { ProvenanceChips } from "@/components/provenance-chips";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -1321,6 +1322,7 @@ function RecordContent({
                     ))}
                   </div>
                   {lab.loinc && <CodeChip system="LOINC" code={lab.loinc} />}
+                  <ProvenanceChips provenance={lab.provenance} className="mt-1.5" />
                 </div>
               ))}
             </div>
@@ -1344,6 +1346,7 @@ function RecordContent({
                     {c.icd10 && <CodeChip system="ICD-10" code={c.icd10} />}
                     {c.snomed && <CodeChip system="SNOMED" code={c.snomed} />}
                   </div>
+                  <ProvenanceChips provenance={c.provenance} className="mt-1.5" />
                 </div>
               ))}
             </div>
@@ -1359,6 +1362,7 @@ function RecordContent({
                 <div className="mt-1">
                   {a.snomed && <CodeChip system="SNOMED" code={a.snomed} />}
                 </div>
+                <ProvenanceChips provenance={a.provenance} className="mt-1.5" />
               </div>
             ))}
           </SectionCard>
@@ -1472,12 +1476,8 @@ function MedRow({ med }: { med: MedicationFact }) {
           </span>
         )}
       </div>
-      <div className="mt-1 flex flex-wrap gap-1">
-        {med.provenance.map((p, idx) => (
-          <span key={idx} className="bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">
-            {p.sourceLabel}
-          </span>
-        ))}
+      <div className="mt-1.5">
+        <ProvenanceChips provenance={med.provenance} />
       </div>
     </div>
   );
