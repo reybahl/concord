@@ -14,6 +14,9 @@ import { RealtimeActor, type SharedPlayback } from "./realtime-actor";
 export type RoomSpeaker = "doctor" | "patient";
 export type RoomStatus = "connecting" | RoomSpeaker | "idle" | "done";
 
+/** Native xAI TTS speed for the simulated visit so demos move along (pitch-preserving). */
+const OUTPUT_SPEED = 1.25;
+
 export interface RoomAnalysers {
   doctor: AnalyserNode;
   patient: AnalyserNode;
@@ -75,6 +78,7 @@ export class RoomSimulator {
       instructions: this.config.doctor.persona,
       shared,
       outputNode: doctorAnalyser,
+      outputSpeed: OUTPUT_SPEED,
       onTranscriptDelta: (t) => this.config.onPartial?.("doctor", t),
       onError,
     });
@@ -85,6 +89,7 @@ export class RoomSimulator {
       instructions: this.config.patient.persona,
       shared,
       outputNode: patientAnalyser,
+      outputSpeed: OUTPUT_SPEED,
       onTranscriptDelta: (t) => this.config.onPartial?.("patient", t),
       onError,
     });

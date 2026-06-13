@@ -27,6 +27,8 @@ export interface RealtimeActorConfig {
   shared: SharedPlayback;
   /** Node to route this actor's audio through (e.g. a per-actor AnalyserNode). Defaults to ctx.destination. */
   outputNode?: AudioNode;
+  /** Native xAI TTS speed multiplier (0.7–1.5, default 1). Pitch-preserving. */
+  outputSpeed?: number;
   onTranscriptDelta?: (cumulative: string) => void;
   onError?: (message: string) => void;
 }
@@ -109,7 +111,10 @@ export class RealtimeActor {
         turn_detection: null,
         audio: {
           input: { format: { type: "audio/pcm", rate: SAMPLE_RATE } },
-          output: { format: { type: "audio/pcm", rate: SAMPLE_RATE } },
+          output: {
+            format: { type: "audio/pcm", rate: SAMPLE_RATE },
+            ...(this.config.outputSpeed ? { speed: this.config.outputSpeed } : {}),
+          },
         },
       },
     });
