@@ -20,6 +20,25 @@ import {
 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
+import { AppSidebar, type DashboardView } from "@/components/app-sidebar";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { Separator } from "@/components/ui/separator";
+import {
+  SidebarInset,
+  SidebarProvider,
+  SidebarTrigger,
+} from "@/components/ui/sidebar";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+
 import { foldPipelineEvents } from "@/lib/pipeline-log";
 import { toFhirBundle } from "@/lib/fhir";
 import type {
@@ -106,6 +125,7 @@ function describeStaleChange(savedIds: string[], currentIds: string[]): string {
 }
 
 export function ConcordApp() {
+  const [activeView, setActiveView] = useState<DashboardView>("overview");
   const [status, setStatus] = useState<Status>("idle");
   const [stages, setStages] = useState<LiveStage[]>([]);
   const [record, setRecord] = useState<HealthRecord | null>(null);
@@ -204,6 +224,7 @@ export function ConcordApp() {
 
   async function run() {
     if (documents.length === 0) return;
+    setActiveView("upload");
     setStatus("running");
     setStages([]);
     setRecord(null);
@@ -247,6 +268,7 @@ export function ConcordApp() {
       }
     }
     setStatus("done");
+    setActiveView("overview");
     setSavedSourceDocumentIds(documents.map((d) => d.id));
     setReconciledAt(new Date().toISOString());
   }
@@ -312,74 +334,135 @@ export function ConcordApp() {
 
   const canReconcile = documents.length > 0 && !storageError && !uploading && status !== "running";
 
+  const statusLabel =
+    status === "running"
+      ? "Reconciling…"
+      : recordStale
+        ? "Outdated"
+        : record
+          ? "Reconciled"
+          : "Ready";
+
+  const highFindingCount =
+    record?.insights.filter((i) => i.severity === "high").length ?? 0;
+
+  const pageTitles: Record<DashboardView, { title: string; description: string }> = {
+    overview: {
+      title: "Overview",
+      description: "Your reconciled health picture at a glance.",
+    },
+    upload: {
+      title: "Upload & reconcile",
+      description: "Add medical records and run Grok reconciliation.",
+    },
+    findings: {
+      title: "Findings",
+      description: "Cross-provider safety insights and verified sources.",
+    },
+    record: {
+      title: "Health record",
+      description: "Medications, labs, conditions, and allergies — coded and grounded.",
+    },
+  };
+
+  const { title: pageTitle, description: pageDescription } = pageTitles[activeView];
+
   return (
-    <div className="mx-auto w-full max-w-6xl px-5 py-10">
-      <Header status={status} hasRecord={Boolean(record)} stale={recordStale} />
-
-      {storageError && (
-        <div className="mt-6 rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-100">
-          {storageError} Set <code className="text-amber-50">DATABASE_URL</code> and{" "}
-          <code className="text-amber-50">BLOB_READ_WRITE_TOKEN</code>, then run{" "}
-          <code className="text-amber-50">pnpm db:push</code>.
-        </div>
-      )}
-
-      {actionError && (
-        <div className="mt-4 rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-100">
-          {actionError}
-        </div>
-      )}
-
-      <Hero
-        status={status}
-        onRun={run}
-        canReconcile={canReconcile}
+    <SidebarProvider>
+      <AppSidebar
+        activeView={activeView}
+        onNavigate={setActiveView}
         documentCount={documents.length}
-        stale={recordStale}
-        hasRecord={Boolean(record)}
+        highFindingCount={highFindingCount}
+        statusLabel={statusLabel}
       />
+      <SidebarInset>
+        <header className="flex h-14 shrink-0 items-center gap-2 border-b px-4">
+          <SidebarTrigger className="-ml-1" />
+          <Separator orientation="vertical" className="mr-2 h-4" />
+          <div className="min-w-0 flex-1">
+            <h1 className="truncate text-sm font-semibold">{pageTitle}</h1>
+            <p className="truncate text-xs text-muted-foreground">{pageDescription}</p>
+          </div>
+          <StatusBadge status={status} hasRecord={Boolean(record)} stale={recordStale} />
+        </header>
 
-      {recordStale && staleMessage && (
-        <StaleBanner message={staleMessage} onReconcile={run} canReconcile={canReconcile} />
-      )}
-
-      <div className="mt-10 grid gap-6 lg:grid-cols-[minmax(0,320px)_minmax(0,1fr)]">
-        <UploadPanel
-          documents={documents}
-          loading={loadingDocs}
-          uploading={uploading}
-          disabled={Boolean(storageError)}
-          fileInputRef={fileInputRef}
-          onPickFiles={() => fileInputRef.current?.click()}
-          onFilesSelected={(files) => void uploadFiles(files)}
-          onRemove={(id) => void removeDocument(id)}
-        />
-        <main className="min-w-0 space-y-6">
-          {(status === "running" || (status === "done" && stages.length > 0)) && (
-            <Pipeline stages={stages} completedAt={reconciledAt} />
+        <div className="flex flex-1 flex-col gap-4 p-4 md:p-6">
+          {storageError && (
+            <Alert variant="destructive">
+              <AlertTitle>Storage not configured</AlertTitle>
+              <AlertDescription>
+                {storageError} Set <code>DATABASE_URL</code> and <code>BLOB_READ_WRITE_TOKEN</code>,
+                then run <code>pnpm db:push</code>.
+              </AlertDescription>
+            </Alert>
           )}
-          {record && status !== "running" && (
-            <Results
+
+          {actionError && (
+            <Alert variant="destructive">
+              <AlertTitle>Something went wrong</AlertTitle>
+              <AlertDescription>{actionError}</AlertDescription>
+            </Alert>
+          )}
+
+          {recordStale && staleMessage && activeView !== "upload" && (
+            <StaleBanner message={staleMessage} onReconcile={run} canReconcile={canReconcile} />
+          )}
+
+          {activeView === "overview" && (
+            <OverviewView
+              record={record}
+              documents={documents}
+              status={status}
+              stale={recordStale}
+              reconciledAt={reconciledAt}
+              canReconcile={canReconcile}
+              onRun={run}
+              onNavigate={setActiveView}
+            />
+          )}
+
+          {activeView === "upload" && (
+            <UploadView
+              documents={documents}
+              loadingDocs={loadingDocs}
+              uploading={uploading}
+              storageError={storageError}
+              status={status}
+              stages={stages}
+              reconciledAt={reconciledAt}
+              record={record}
+              stale={recordStale}
+              staleMessage={staleMessage}
+              canReconcile={canReconcile}
+              fileInputRef={fileInputRef}
+              onRun={run}
+              onPickFiles={() => fileInputRef.current?.click()}
+              onFilesSelected={(files) => void uploadFiles(files)}
+              onRemove={(id) => void removeDocument(id)}
+            />
+          )}
+
+          {activeView === "findings" && (
+            <FindingsView
               record={record}
               stale={recordStale}
               reconciledAt={reconciledAt}
               onExport={downloadFhir}
+              onNavigate={setActiveView}
             />
           )}
-          {status === "idle" && !record && (
-            <IdleHint documentCount={documents.length} hasStorage={!storageError} />
-          )}
-        </main>
-      </div>
 
-      <footer className="mt-16 border-t border-white/5 pt-6 text-center text-xs text-slate-500">
-        Concord · uploads in Vercel Blob · reconciliation persisted in Postgres · grounded
-      </footer>
-    </div>
+          {activeView === "record" && (
+            <RecordView record={record} stale={recordStale} onExport={downloadFhir} />
+          )}
+        </div>
+      </SidebarInset>
+    </SidebarProvider>
   );
 }
 
-function Header({
+function StatusBadge({
   status,
   hasRecord,
   stale,
@@ -388,29 +471,20 @@ function Header({
   hasRecord: boolean;
   stale: boolean;
 }) {
-  const badge =
-    status === "running"
-      ? { label: "Reconciling…", className: "border-sky-500/40 bg-sky-500/10 text-sky-300" }
-      : stale
-        ? { label: "Outdated", className: "border-amber-500/40 bg-amber-500/10 text-amber-300" }
-        : hasRecord
-          ? { label: "Reconciled", className: "border-emerald-500/40 bg-emerald-500/10 text-emerald-300" }
-          : { label: "Ready", className: "border-white/10 bg-white/5 text-slate-400" };
-
-  return (
-    <header className="flex items-center justify-between">
-      <div className="flex items-center gap-2.5">
-        <div className="grid size-9 place-items-center rounded-xl bg-gradient-to-br from-sky-400 to-indigo-500 text-base font-bold text-slate-950">
-          ◇
-        </div>
-        <div>
-          <div className="text-lg font-semibold leading-none">Concord</div>
-          <div className="text-xs text-slate-400">Patient-owned health reconciliation</div>
-        </div>
-      </div>
-      <span className={`rounded-full border px-3 py-1 text-xs ${badge.className}`}>{badge.label}</span>
-    </header>
-  );
+  if (status === "running") {
+    return (
+      <Badge variant="secondary" className="gap-1 border-sky-500/30 bg-sky-500/10 text-sky-300">
+        <Loader2 className="size-3 animate-spin" /> Reconciling
+      </Badge>
+    );
+  }
+  if (stale) {
+    return <Badge variant="outline" className="border-amber-500/40 text-amber-300">Outdated</Badge>;
+  }
+  if (hasRecord) {
+    return <Badge variant="outline" className="border-emerald-500/40 text-emerald-300">Reconciled</Badge>;
+  }
+  return <Badge variant="secondary">Ready</Badge>;
 }
 
 function StaleBanner({
@@ -423,76 +497,351 @@ function StaleBanner({
   canReconcile: boolean;
 }) {
   return (
-    <div className="mt-6 flex flex-col gap-3 rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
-      <div className="flex items-start gap-2 text-sm text-amber-100">
-        <AlertTriangle className="mt-0.5 size-4 shrink-0 text-amber-300" />
+    <Alert className="border-amber-500/30 bg-amber-500/10 text-amber-100">
+      <AlertTriangle className="text-amber-300" />
+      <AlertTitle>Record may be outdated</AlertTitle>
+      <AlertDescription className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <span>{message}</span>
+        <Button
+          size="sm"
+          variant="outline"
+          onClick={onReconcile}
+          disabled={!canReconcile}
+          className="shrink-0 border-amber-400/40 bg-amber-400/10 text-amber-100 hover:bg-amber-400/20"
+        >
+          Update reconciliation
+        </Button>
+      </AlertDescription>
+    </Alert>
+  );
+}
+
+function OverviewView({
+  record,
+  documents,
+  status,
+  stale,
+  reconciledAt,
+  canReconcile,
+  onRun,
+  onNavigate,
+}: {
+  record: HealthRecord | null;
+  documents: UploadedDocument[];
+  status: Status;
+  stale: boolean;
+  reconciledAt: string | null;
+  canReconcile: boolean;
+  onRun: () => void;
+  onNavigate: (view: DashboardView) => void;
+}) {
+  const highCount = record?.insights.filter((i) => i.severity === "high").length ?? 0;
+  const topFindings = record
+    ? [...record.insights]
+        .sort((a, b) => {
+          const rank = { high: 0, medium: 1, low: 2 };
+          return rank[a.severity] - rank[b.severity];
+        })
+        .slice(0, 3)
+    : [];
+
+  const reconciledLabel = reconciledAt
+    ? new Date(reconciledAt).toLocaleString(undefined, {
+        dateStyle: "medium",
+        timeStyle: "short",
+      })
+    : null;
+
+  return (
+    <div className="space-y-6">
+      <Card className="overflow-hidden border-sky-500/20 bg-gradient-to-br from-sky-500/5 to-indigo-500/5">
+        <CardHeader>
+          <div className="inline-flex w-fit items-center gap-2 rounded-full border bg-background/50 px-3 py-1 text-xs text-muted-foreground">
+            <Sparkles className="size-3.5 text-sky-400" /> Powered by Grok · FHIR-native · grounded
+          </div>
+          <CardTitle className="text-2xl font-semibold tracking-tight sm:text-3xl">
+            {record?.patient.name ?? "Your health record"}
+          </CardTitle>
+          <CardDescription className="max-w-2xl text-base">
+            Upload records from every provider. Concord assembles one grounded picture and flags
+            dangerous oversights no single doctor could see.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="flex flex-wrap gap-2">
+          <Button onClick={onRun} disabled={status === "running" || !canReconcile}>
+            {status === "running" ? (
+              <Loader2 className="animate-spin" />
+            ) : (
+              <Activity />
+            )}
+            {status === "running"
+              ? "Reconciling…"
+              : documents.length === 0
+                ? "Upload records first"
+                : stale
+                  ? "Update reconciliation"
+                  : record
+                    ? "Run again"
+                    : `Reconcile ${documents.length} record${documents.length === 1 ? "" : "s"}`}
+          </Button>
+          {record && (
+            <Button variant="outline" onClick={() => onNavigate("findings")}>
+              View findings
+            </Button>
+          )}
+        </CardContent>
+      </Card>
+
+      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <StatCard label="Uploaded documents" value={String(documents.length)} />
+        <StatCard label="Medications" value={record ? String(record.medications.length) : "—"} />
+        <StatCard label="Lab series" value={record ? String(record.labs.length) : "—"} />
+        <StatCard
+          label="High-severity findings"
+          value={record ? String(highCount) : "—"}
+          highlight={highCount > 0}
+        />
       </div>
-      <button
-        onClick={onReconcile}
-        disabled={!canReconcile}
-        className="shrink-0 rounded-lg border border-amber-400/40 bg-amber-400/10 px-3 py-1.5 text-xs font-medium text-amber-100 transition hover:bg-amber-400/20 disabled:cursor-not-allowed disabled:opacity-50"
-      >
-        Update reconciliation
-      </button>
+
+      {reconciledLabel && (
+        <p className="text-xs text-muted-foreground">
+          Last reconciled {reconciledLabel}
+          {record?.meta?.pipeline === "live" && (
+            <Badge variant="outline" className="ml-2 border-emerald-500/30 text-emerald-300">
+              Live Grok
+            </Badge>
+          )}
+        </p>
+      )}
+
+      {topFindings.length > 0 ? (
+        <Card>
+          <CardHeader className="flex-row items-center justify-between space-y-0">
+            <CardTitle className="text-base">Top findings</CardTitle>
+            <Button variant="ghost" size="sm" onClick={() => onNavigate("findings")}>
+              View all
+            </Button>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            {topFindings.map((insight) => (
+              <InsightCard key={insight.id} insight={insight} compact />
+            ))}
+          </CardContent>
+        </Card>
+      ) : !record ? (
+        <Card>
+          <CardContent className="flex flex-col items-center py-10 text-center">
+            <Stethoscope className="size-8 text-muted-foreground" />
+            <p className="mt-3 max-w-md text-sm text-muted-foreground">
+              {documents.length === 0
+                ? "Upload medical records, then reconcile to see your dashboard."
+                : "Run reconciliation to populate your overview."}
+            </p>
+            <Button className="mt-4" variant="outline" onClick={() => onNavigate("upload")}>
+              Go to uploads
+            </Button>
+          </CardContent>
+        </Card>
+      ) : null}
     </div>
   );
 }
 
-function Hero({
-  status,
-  onRun,
-  canReconcile,
-  documentCount,
-  stale,
-  hasRecord,
+function StatCard({
+  label,
+  value,
+  highlight,
 }: {
-  status: Status;
-  onRun: () => void;
-  canReconcile: boolean;
-  documentCount: number;
-  stale: boolean;
-  hasRecord: boolean;
+  label: string;
+  value: string;
+  highlight?: boolean;
 }) {
-  const buttonLabel =
-    status === "running"
-      ? "Reconciling…"
-      : documentCount === 0
-        ? "Upload records to reconcile"
-        : stale
-          ? "Update reconciliation"
-          : hasRecord
-            ? "Run again"
-            : `Reconcile ${documentCount} record${documentCount === 1 ? "" : "s"}`;
+  return (
+    <Card className={highlight ? "border-destructive/30" : undefined}>
+      <CardHeader className="pb-2">
+        <CardDescription>{label}</CardDescription>
+        <CardTitle className="text-3xl tabular-nums">{value}</CardTitle>
+      </CardHeader>
+    </Card>
+  );
+}
+
+function UploadView({
+  documents,
+  loadingDocs,
+  uploading,
+  storageError,
+  status,
+  stages,
+  reconciledAt,
+  record,
+  stale,
+  staleMessage,
+  canReconcile,
+  fileInputRef,
+  onRun,
+  onPickFiles,
+  onFilesSelected,
+  onRemove,
+}: {
+  documents: UploadedDocument[];
+  loadingDocs: boolean;
+  uploading: boolean;
+  storageError: string | null;
+  status: Status;
+  stages: LiveStage[];
+  reconciledAt: string | null;
+  record: HealthRecord | null;
+  stale: boolean;
+  staleMessage: string | null;
+  canReconcile: boolean;
+  fileInputRef: React.RefObject<HTMLInputElement | null>;
+  onRun: () => void;
+  onPickFiles: () => void;
+  onFilesSelected: (files: FileList) => void;
+  onRemove: (id: string) => void;
+}) {
+  const disabled = Boolean(storageError);
 
   return (
-    <section className="mt-10 max-w-3xl">
-      <div className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs text-slate-300">
-        <Sparkles className="size-3.5 text-sky-300" /> Powered by Grok · FHIR-native · grounded
+    <div className="space-y-6">
+      {stale && staleMessage && (
+        <StaleBanner message={staleMessage} onReconcile={onRun} canReconcile={canReconcile} />
+      )}
+
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <p className="text-sm text-muted-foreground">
+            Drop visit summaries, lab reports, and pharmacy printouts (.txt).
+          </p>
+        </div>
+        <Button onClick={onRun} disabled={status === "running" || !canReconcile}>
+          {status === "running" ? (
+            <Loader2 className="animate-spin" />
+          ) : (
+            <Activity />
+          )}
+          {status === "running"
+            ? "Reconciling…"
+            : documents.length === 0
+              ? "Upload records to reconcile"
+              : stale
+                ? "Update reconciliation"
+                : record
+                  ? "Run again"
+                  : `Reconcile ${documents.length} record${documents.length === 1 ? "" : "s"}`}
+        </Button>
       </div>
-      <h1 className="mt-5 text-4xl font-semibold leading-tight tracking-tight sm:text-5xl">
-        Upload your records.{" "}
-        <span className="bg-gradient-to-r from-sky-300 to-indigo-300 bg-clip-text text-transparent">
-          Catch what falls through the cracks.
-        </span>
-      </h1>
-      <p className="mt-4 text-lg leading-relaxed text-slate-300">
-        Drop in visit summaries, lab reports, and pharmacy printouts from different providers. Concord
-        assembles one grounded picture — and flags dangerous oversights no single doctor could see.
-      </p>
-      <button
-        onClick={onRun}
-        disabled={status === "running" || !canReconcile}
-        className="mt-7 inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-sky-400 to-indigo-500 px-5 py-3 text-sm font-semibold text-slate-950 shadow-lg shadow-sky-500/20 transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50"
-      >
-        {status === "running" ? (
-          <Loader2 className="size-4 animate-spin" />
-        ) : (
-          <Activity className="size-4" />
+
+      <div className="grid gap-6 lg:grid-cols-[minmax(0,340px)_minmax(0,1fr)]">
+        <UploadPanel
+          documents={documents}
+          loading={loadingDocs}
+          uploading={uploading}
+          disabled={disabled}
+          fileInputRef={fileInputRef}
+          onPickFiles={onPickFiles}
+          onFilesSelected={onFilesSelected}
+          onRemove={onRemove}
+        />
+        <div className="min-w-0 space-y-6">
+          {(status === "running" || (status === "done" && stages.length > 0)) && (
+            <Pipeline stages={stages} completedAt={reconciledAt} />
+          )}
+          {status === "idle" && !record && stages.length === 0 && (
+            <IdleHint documentCount={documents.length} hasStorage={!storageError} />
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function FindingsView({
+  record,
+  stale,
+  reconciledAt,
+  onExport,
+  onNavigate,
+}: {
+  record: HealthRecord | null;
+  stale: boolean;
+  reconciledAt: string | null;
+  onExport: () => void;
+  onNavigate: (view: DashboardView) => void;
+}) {
+  if (!record) {
+    return (
+      <EmptyState
+        icon={<ShieldAlert className="size-8" />}
+        title="No findings yet"
+        description="Upload records and run reconciliation to generate cross-provider safety insights."
+        actionLabel="Go to uploads"
+        onAction={() => onNavigate("upload")}
+      />
+    );
+  }
+
+  return (
+    <FindingsContent
+      record={record}
+      stale={stale}
+      reconciledAt={reconciledAt}
+      onExport={onExport}
+    />
+  );
+}
+
+function RecordView({
+  record,
+  stale,
+  onExport,
+}: {
+  record: HealthRecord | null;
+  stale: boolean;
+  onExport: () => void;
+}) {
+  if (!record) {
+    return (
+      <EmptyState
+        icon={<Stethoscope className="size-8" />}
+        title="No health record yet"
+        description="Reconcile your uploads to build a coded, grounded record."
+      />
+    );
+  }
+
+  return <RecordContent record={record} stale={stale} onExport={onExport} />;
+}
+
+function EmptyState({
+  icon,
+  title,
+  description,
+  actionLabel,
+  onAction,
+  actionDisabled,
+}: {
+  icon: React.ReactNode;
+  title: string;
+  description: string;
+  actionLabel?: string;
+  onAction?: () => void;
+  actionDisabled?: boolean;
+}) {
+  return (
+    <Card>
+      <CardContent className="flex flex-col items-center py-16 text-center">
+        <div className="text-muted-foreground">{icon}</div>
+        <h2 className="mt-4 text-base font-medium">{title}</h2>
+        <p className="mt-2 max-w-md text-sm text-muted-foreground">{description}</p>
+        {actionLabel && onAction && (
+          <Button className="mt-4" onClick={onAction} disabled={actionDisabled}>
+            {actionLabel}
+          </Button>
         )}
-        {buttonLabel}
-      </button>
-    </section>
+      </CardContent>
+    </Card>
   );
 }
 
@@ -518,86 +867,94 @@ function UploadPanel({
   const [dragOver, setDragOver] = useState(false);
 
   return (
-    <aside className="space-y-3">
-      <h2 className="flex items-center gap-2 text-sm font-medium text-slate-300">
-        <Layers className="size-4 text-slate-400" /> Your uploads ({documents.length})
-      </h2>
-
-      <div
-        onDragOver={(e) => {
-          e.preventDefault();
-          if (!disabled) setDragOver(true);
-        }}
-        onDragLeave={() => setDragOver(false)}
-        onDrop={(e) => {
-          e.preventDefault();
-          setDragOver(false);
-          if (disabled || !e.dataTransfer.files.length) return;
-          onFilesSelected(e.dataTransfer.files);
-        }}
-        className={`rounded-xl border border-dashed p-4 text-center transition ${
-          dragOver
-            ? "border-sky-400/60 bg-sky-500/10"
-            : "border-white/15 bg-white/[0.02] hover:border-white/25"
-        } ${disabled ? "opacity-50" : ""}`}
-      >
-        <Upload className="mx-auto size-6 text-slate-500" />
-        <p className="mt-2 text-sm text-slate-300">Drop .txt medical records here</p>
-        <p className="mt-1 text-xs text-slate-500">or</p>
-        <button
-          type="button"
-          onClick={onPickFiles}
-          disabled={disabled || uploading}
-          className="mt-2 rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-xs font-medium text-slate-200 transition hover:bg-white/10 disabled:opacity-50"
-        >
-          {uploading ? "Uploading…" : "Choose files"}
-        </button>
-        <input
-          ref={fileInputRef}
-          type="file"
-          accept=".txt,.md,text/plain,text/markdown"
-          multiple
-          className="hidden"
-          onChange={(e) => {
-            if (e.target.files?.length) onFilesSelected(e.target.files);
-            e.target.value = "";
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2 text-base">
+          <Layers className="size-4 text-muted-foreground" />
+          Your uploads ({documents.length})
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        <div
+          onDragOver={(e) => {
+            e.preventDefault();
+            if (!disabled) setDragOver(true);
           }}
-        />
-      </div>
-
-      {loading ? (
-        <div className="flex items-center gap-2 text-xs text-slate-500">
-          <Loader2 className="size-3.5 animate-spin" /> Loading uploads…
+          onDragLeave={() => setDragOver(false)}
+          onDrop={(e) => {
+            e.preventDefault();
+            setDragOver(false);
+            if (disabled || !e.dataTransfer.files.length) return;
+            onFilesSelected(e.dataTransfer.files);
+          }}
+          className={`rounded-xl border border-dashed p-6 text-center transition ${
+            dragOver
+              ? "border-sky-400/60 bg-sky-500/10"
+              : "border-border bg-muted/20 hover:border-muted-foreground/30"
+          } ${disabled ? "opacity-50" : ""}`}
+        >
+          <Upload className="mx-auto size-6 text-muted-foreground" />
+          <p className="mt-2 text-sm">Drop .txt medical records here</p>
+          <p className="mt-1 text-xs text-muted-foreground">or</p>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="mt-2"
+            onClick={onPickFiles}
+            disabled={disabled || uploading}
+          >
+            {uploading ? "Uploading…" : "Choose files"}
+          </Button>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".txt,.md,text/plain,text/markdown"
+            multiple
+            className="hidden"
+            onChange={(e) => {
+              if (e.target.files?.length) onFilesSelected(e.target.files);
+              e.target.value = "";
+            }}
+          />
         </div>
-      ) : documents.length === 0 ? (
-        <p className="px-1 text-xs leading-relaxed text-slate-500">
-          For the demo, upload the five synthetic records from the repo&apos;s{" "}
-          <code className="text-slate-400">demo-data/</code> folder.
-        </p>
-      ) : (
-        documents.map((doc) => (
-          <div key={doc.id} className="rounded-xl border border-white/10 bg-white/[0.03] p-3">
-            <div className="flex items-start gap-2">
-              <FileText className="mt-0.5 size-4 shrink-0 text-slate-500" />
+
+        {loading ? (
+          <div className="flex items-center gap-2 text-xs text-muted-foreground">
+            <Loader2 className="size-3.5 animate-spin" /> Loading uploads…
+          </div>
+        ) : documents.length === 0 ? (
+          <p className="text-xs leading-relaxed text-muted-foreground">
+            For the demo, upload the five synthetic records from the repo&apos;s{" "}
+            <code>demo-data/</code> folder.
+          </p>
+        ) : (
+          documents.map((doc) => (
+            <div
+              key={doc.id}
+              className="flex items-start gap-2 rounded-lg border bg-muted/20 p-3"
+            >
+              <FileText className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
               <div className="min-w-0 flex-1">
                 <div className="truncate text-sm font-medium">{doc.label}</div>
-                <div className="truncate text-xs text-slate-400">{doc.filename}</div>
-                <div className="mt-0.5 text-xs text-slate-500">{formatBytes(doc.sizeBytes)}</div>
+                <div className="truncate text-xs text-muted-foreground">{doc.filename}</div>
+                <div className="mt-0.5 text-xs text-muted-foreground">{formatBytes(doc.sizeBytes)}</div>
               </div>
-              <button
+              <Button
                 type="button"
+                variant="ghost"
+                size="icon-sm"
                 onClick={() => onRemove(doc.id)}
                 disabled={disabled || uploading}
-                className="rounded-md p-1 text-slate-500 transition hover:bg-white/5 hover:text-red-300 disabled:opacity-40"
                 aria-label={`Remove ${doc.filename}`}
               >
                 <Trash2 className="size-3.5" />
-              </button>
+              </Button>
             </div>
-          </div>
-        ))
-      )}
-    </aside>
+          ))
+        )}
+      </CardContent>
+    </Card>
   );
 }
 
@@ -609,16 +966,18 @@ function IdleHint({
   hasStorage: boolean;
 }) {
   return (
-    <div className="rounded-2xl border border-dashed border-white/10 bg-white/[0.02] p-8 text-center">
-      <Stethoscope className="mx-auto size-8 text-slate-600" />
-      <p className="mx-auto mt-3 max-w-sm text-sm text-slate-400">
-        {documentCount === 0
-          ? hasStorage
-            ? "Upload your medical records on the left, then press Reconcile."
-            : "Configure Postgres + Vercel Blob to enable uploads."
-          : "Press Reconcile to watch Concord read your uploads, normalize them to standard codes, ground every fact to its source, and run a cross-provider safety check."}
-      </p>
-    </div>
+    <Card>
+      <CardContent className="flex flex-col items-center py-10 text-center">
+        <Stethoscope className="size-8 text-muted-foreground" />
+        <p className="mx-auto mt-3 max-w-sm text-sm text-muted-foreground">
+          {documentCount === 0
+            ? hasStorage
+              ? "Upload your medical records, then press Reconcile."
+              : "Configure Postgres + Vercel Blob to enable uploads."
+            : "Press Reconcile to watch Concord read your uploads, normalize them to standard codes, ground every fact to its source, and run a cross-provider safety check."}
+        </p>
+      </CardContent>
+    </Card>
   );
 }
 
@@ -644,49 +1003,51 @@ function Pipeline({
     : null;
 
   return (
-    <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-5">
-      <div className="mb-4 flex flex-wrap items-baseline justify-between gap-2">
-        <h2 className="text-sm font-medium text-slate-300">Reconciliation pipeline</h2>
+    <Card>
+      <CardHeader className="flex-row items-center justify-between space-y-0">
+        <CardTitle className="text-base">Reconciliation pipeline</CardTitle>
         {completedLabel && (
-          <span className="text-xs text-slate-500">Completed {completedLabel}</span>
+          <span className="text-xs text-muted-foreground">Completed {completedLabel}</span>
         )}
-      </div>
-      <ol className="space-y-3">
-        {stages.map((s) => (
-          <li key={s.stage} className="flex items-start gap-3">
-            <span className="mt-0.5">
-              {s.status === "done" ? (
-                <CheckCircle2 className="size-5 text-emerald-400" />
-              ) : (
-                <Loader2 className="size-5 animate-spin text-sky-400" />
-              )}
-            </span>
-            <div className="min-w-0 flex-1">
-              <div className={`text-sm ${s.status === "done" ? "text-slate-200" : "text-slate-100"}`}>
-                {s.label}
+      </CardHeader>
+      <CardContent>
+        <ol className="space-y-3">
+          {stages.map((s) => (
+            <li key={s.stage} className="flex items-start gap-3">
+              <span className="mt-0.5">
+                {s.status === "done" ? (
+                  <CheckCircle2 className="size-5 text-emerald-400" />
+                ) : (
+                  <Loader2 className="size-5 animate-spin text-sky-400" />
+                )}
+              </span>
+              <div className="min-w-0 flex-1">
+                <div className={`text-sm ${s.status === "done" ? "text-muted-foreground" : ""}`}>
+                  {s.label}
+                </div>
+                {s.detail && <div className="text-xs text-muted-foreground">{s.detail}</div>}
+                {s.notes.length > 0 && (
+                  <ul className="mt-1.5 space-y-1">
+                    {s.notes.map((n, i) => (
+                      <li
+                        key={n.slot ?? i}
+                        className={`border-l-2 pl-2 text-xs leading-relaxed ${NOTE_TONE[n.tone ?? "info"]}`}
+                      >
+                        {n.text}
+                      </li>
+                    ))}
+                  </ul>
+                )}
               </div>
-              {s.detail && <div className="text-xs text-slate-400">{s.detail}</div>}
-              {s.notes.length > 0 && (
-                <ul className="mt-1.5 space-y-1">
-                  {s.notes.map((n, i) => (
-                    <li
-                      key={i}
-                      className={`border-l-2 pl-2 text-xs leading-relaxed ${NOTE_TONE[n.tone ?? "info"]}`}
-                    >
-                      {n.text}
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </div>
-          </li>
-        ))}
-      </ol>
-    </div>
+            </li>
+          ))}
+        </ol>
+      </CardContent>
+    </Card>
   );
 }
 
-function Results({
+function FindingsContent({
   record,
   stale,
   reconciledAt,
@@ -715,156 +1076,228 @@ function Results({
 
   return (
     <div className={`space-y-6 ${stale ? "opacity-80" : ""}`}>
-      {isFallback && (
-        <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-100">
-          This is the <strong>reference record</strong> (Grok was unavailable). Click{" "}
-          <strong>Run again</strong> for live reconciliation with Grok web search and verified citation
-          links.
-        </div>
-      )}
-      {!isFallback && !hasWebCitations && record.meta?.pipeline === "live" && (
-        <div className="rounded-xl border border-amber-500/25 bg-amber-500/10 px-4 py-3 text-sm text-amber-100">
-          Reconciliation succeeded but analysis did not complete. Click <strong>Run again</strong> to
-          retry Grok web search for findings and citations.
-        </div>
-      )}
-      {!isFallback && !hasWebCitations && !record.meta?.pipeline && (
-        <div className="rounded-xl border border-sky-500/25 bg-sky-500/10 px-4 py-3 text-sm text-sky-100">
-          No web citations on this saved record. Click <strong>Run again</strong> to re-analyze with
-          live Grok web search.
-        </div>
-      )}
+      <RecordAlerts
+        isFallback={isFallback}
+        hasWebCitations={hasWebCitations}
+        pipeline={record.meta?.pipeline}
+      />
+
       {(savedLabel || stale || record.meta?.pipeline === "live") && (
-        <div className="flex flex-wrap items-center gap-2 text-xs text-slate-400">
+        <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
           {savedLabel && <span>{savedLabel}</span>}
           {record.meta?.pipeline === "live" && (
-            <span className="rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2 py-0.5 text-emerald-200">
+            <Badge variant="outline" className="border-emerald-500/30 text-emerald-300">
               Live Grok
-            </span>
+            </Badge>
           )}
           {stale && (
-            <span className="rounded-full border border-amber-500/30 bg-amber-500/10 px-2 py-0.5 text-amber-200">
+            <Badge variant="outline" className="border-amber-500/30 text-amber-200">
               May be outdated
-            </span>
+            </Badge>
           )}
         </div>
       )}
+
       {record.webSources && record.webSources.length > 0 && (
-        <section className="rounded-xl border border-white/10 bg-white/[0.03] p-4">
-          <h2 className="mb-2 text-sm font-medium text-slate-300">
-            Web sources ({record.webSources.length})
-          </h2>
-          <ul className="space-y-1.5">
-            {record.webSources.map((s) => (
-              <li key={s.url}>
-                <a
-                  href={s.url}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="text-xs text-sky-300 underline-offset-2 hover:underline"
-                >
-                  {s.title?.trim() || s.url} ↗
-                </a>
-              </li>
-            ))}
-          </ul>
-        </section>
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Web sources ({record.webSources.length})</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <ul className="space-y-1.5">
+              {record.webSources.map((s) => (
+                <li key={s.url}>
+                  <a
+                    href={s.url}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-xs text-sky-300 underline-offset-2 hover:underline"
+                  >
+                    {s.title?.trim() || s.url} ↗
+                  </a>
+                </li>
+              ))}
+            </ul>
+          </CardContent>
+        </Card>
       )}
-      <section>
-        <div className="mb-3 flex items-center justify-between">
-          <h2 className="flex items-center gap-2 text-sm font-medium text-slate-300">
-            <ShieldAlert className="size-4 text-red-400" /> Findings ({record.insights.length})
-          </h2>
-          <button
-            onClick={onExport}
-            className="inline-flex items-center gap-1.5 rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-xs font-medium text-slate-200 transition hover:bg-white/10"
-          >
-            <Download className="size-3.5" /> Export FHIR
-          </button>
-        </div>
-        <div className="space-y-3">
-          {sorted.map((i) => (
-            <InsightCard key={i.id} insight={i} />
-          ))}
-        </div>
-      </section>
 
-      <section className="grid gap-4 sm:grid-cols-2">
-        <Card title="Medications" icon={<Pill className="size-4 text-sky-300" />}>
-          <div className="space-y-2.5">
-            {record.medications.map((m) => (
-              <MedRow key={m.id} med={m} />
-            ))}
-          </div>
-        </Card>
+      <div className="flex items-center justify-between">
+        <h2 className="flex items-center gap-2 text-base font-medium">
+          <ShieldAlert className="size-4 text-red-400" />
+          Findings ({record.insights.length})
+        </h2>
+        <Button variant="outline" size="sm" onClick={onExport}>
+          <Download /> Export FHIR
+        </Button>
+      </div>
 
-        <Card title="Labs & trends" icon={<FlaskConical className="size-4 text-sky-300" />}>
-          <div className="space-y-3">
-            {record.labs.map((lab) => (
-              <div key={lab.id}>
-                <div className="flex items-center justify-between text-sm">
-                  <span className="font-medium text-slate-200">{lab.display}</span>
-                  <TrendBadge trend={lab.trend} />
-                </div>
-                <div className="mt-1 flex flex-wrap items-center gap-1.5">
-                  {lab.series.map((p, idx) => (
-                    <span
-                      key={idx}
-                      className="rounded-md bg-white/5 px-1.5 py-0.5 font-mono text-xs text-slate-300"
-                      title={p.reported ? `reported: ${p.reported}` : undefined}
-                    >
-                      {p.value ?? p.reported} {p.value != null ? p.unit : ""}
-                      {p.reported && p.normalizedValue ? " ⚐" : ""}
-                    </span>
-                  ))}
-                </div>
-                {lab.loinc && <CodeChip system="LOINC" code={lab.loinc} />}
-              </div>
-            ))}
-          </div>
-        </Card>
-
-        <Card title="Conditions" icon={<Activity className="size-4 text-sky-300" />}>
-          <div className="space-y-2">
-            {record.conditions.map((c) => (
-              <div key={c.id} className="text-sm">
-                <div className="flex items-center gap-2">
-                  <span className="text-slate-200">{c.display}</span>
-                  {c.inferred && (
-                    <span className="rounded bg-amber-500/15 px-1.5 py-0.5 text-[10px] font-medium text-amber-300">
-                      inferred
-                    </span>
-                  )}
-                </div>
-                <div className="mt-0.5 flex gap-1.5">
-                  {c.icd10 && <CodeChip system="ICD-10" code={c.icd10} />}
-                  {c.snomed && <CodeChip system="SNOMED" code={c.snomed} />}
-                </div>
-              </div>
-            ))}
-          </div>
-        </Card>
-
-        <Card title="Allergies" icon={<AlertTriangle className="size-4 text-sky-300" />}>
-          {record.allergies.map((a) => (
-            <div key={a.id} className="text-sm">
-              <span className="text-slate-200">{a.display}</span>
-              {a.reaction && <span className="text-slate-400"> · {a.reaction}</span>}
-              <div className="mt-1">
-                {a.snomed && <CodeChip system="SNOMED" code={a.snomed} />}
-              </div>
-            </div>
-          ))}
-        </Card>
-      </section>
+      <div className="space-y-3">
+        {sorted.map((i) => (
+          <InsightCard key={i.id} insight={i} />
+        ))}
+      </div>
     </div>
   );
 }
 
-function InsightCard({ insight }: { insight: Insight }) {
+function RecordContent({
+  record,
+  stale,
+  onExport,
+}: {
+  record: HealthRecord;
+  stale: boolean;
+  onExport: () => void;
+}) {
+  return (
+    <div className={`space-y-6 ${stale ? "opacity-80" : ""}`}>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <p className="text-sm text-muted-foreground">
+            {record.patient.name}
+            {record.patient.dob ? ` · DOB ${record.patient.dob}` : ""}
+          </p>
+        </div>
+        <Button variant="outline" size="sm" onClick={onExport}>
+          <Download /> Export FHIR
+        </Button>
+      </div>
+
+      <Tabs defaultValue="medications">
+        <TabsList>
+          <TabsTrigger value="medications">
+            Medications ({record.medications.length})
+          </TabsTrigger>
+          <TabsTrigger value="labs">Labs ({record.labs.length})</TabsTrigger>
+          <TabsTrigger value="conditions">Conditions ({record.conditions.length})</TabsTrigger>
+          <TabsTrigger value="allergies">Allergies ({record.allergies.length})</TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="medications" className="mt-4">
+          <SectionCard title="Medications" icon={<Pill className="size-4 text-sky-300" />}>
+            <div className="space-y-2.5">
+              {record.medications.map((m) => (
+                <MedRow key={m.id} med={m} />
+              ))}
+            </div>
+          </SectionCard>
+        </TabsContent>
+
+        <TabsContent value="labs" className="mt-4">
+          <SectionCard title="Labs & trends" icon={<FlaskConical className="size-4 text-sky-300" />}>
+            <div className="space-y-3">
+              {record.labs.map((lab) => (
+                <div key={lab.id}>
+                  <div className="flex items-center justify-between text-sm">
+                    <span className="font-medium">{lab.display}</span>
+                    <TrendBadge trend={lab.trend} />
+                  </div>
+                  <div className="mt-1 flex flex-wrap items-center gap-1.5">
+                    {lab.series.map((p, idx) => (
+                      <span
+                        key={idx}
+                        className="rounded-md bg-muted px-1.5 py-0.5 font-mono text-xs"
+                        title={p.reported ? `reported: ${p.reported}` : undefined}
+                      >
+                        {p.value ?? p.reported} {p.value != null ? p.unit : ""}
+                        {p.reported && p.normalizedValue ? " ⚐" : ""}
+                      </span>
+                    ))}
+                  </div>
+                  {lab.loinc && <CodeChip system="LOINC" code={lab.loinc} />}
+                </div>
+              ))}
+            </div>
+          </SectionCard>
+        </TabsContent>
+
+        <TabsContent value="conditions" className="mt-4">
+          <SectionCard title="Conditions" icon={<Activity className="size-4 text-sky-300" />}>
+            <div className="space-y-2">
+              {record.conditions.map((c) => (
+                <div key={c.id} className="text-sm">
+                  <div className="flex items-center gap-2">
+                    <span>{c.display}</span>
+                    {c.inferred && (
+                      <Badge variant="outline" className="border-amber-500/30 text-amber-300">
+                        inferred
+                      </Badge>
+                    )}
+                  </div>
+                  <div className="mt-0.5 flex gap-1.5">
+                    {c.icd10 && <CodeChip system="ICD-10" code={c.icd10} />}
+                    {c.snomed && <CodeChip system="SNOMED" code={c.snomed} />}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </SectionCard>
+        </TabsContent>
+
+        <TabsContent value="allergies" className="mt-4">
+          <SectionCard title="Allergies" icon={<AlertTriangle className="size-4 text-sky-300" />}>
+            {record.allergies.map((a) => (
+              <div key={a.id} className="text-sm">
+                <span>{a.display}</span>
+                {a.reaction && <span className="text-muted-foreground"> · {a.reaction}</span>}
+                <div className="mt-1">
+                  {a.snomed && <CodeChip system="SNOMED" code={a.snomed} />}
+                </div>
+              </div>
+            ))}
+          </SectionCard>
+        </TabsContent>
+      </Tabs>
+    </div>
+  );
+}
+
+function RecordAlerts({
+  isFallback,
+  hasWebCitations,
+  pipeline,
+}: {
+  isFallback: boolean;
+  hasWebCitations: boolean;
+  pipeline?: "live" | "fallback";
+}) {
+  if (isFallback) {
+    return (
+      <Alert className="border-amber-500/30 bg-amber-500/10 text-amber-100">
+        <AlertTitle>Reference record</AlertTitle>
+        <AlertDescription>
+          Grok was unavailable. Run reconciliation again for live analysis with verified citations.
+        </AlertDescription>
+      </Alert>
+    );
+  }
+  if (!hasWebCitations && pipeline === "live") {
+    return (
+      <Alert className="border-amber-500/25 bg-amber-500/10 text-amber-100">
+        <AlertTitle>Analysis incomplete</AlertTitle>
+        <AlertDescription>
+          Reconciliation succeeded but web search did not complete. Run again to retry citations.
+        </AlertDescription>
+      </Alert>
+    );
+  }
+  if (!hasWebCitations && !pipeline) {
+    return (
+      <Alert className="border-sky-500/25 bg-sky-500/10 text-sky-100">
+        <AlertDescription>
+          No web citations on this saved record. Run again to re-analyze with live Grok web search.
+        </AlertDescription>
+      </Alert>
+    );
+  }
+  return null;
+}
+
+function InsightCard({ insight, compact }: { insight: Insight; compact?: boolean }) {
   const s = SEVERITY[insight.severity];
   return (
-    <div className={`rounded-xl border ${s.ring} ${s.bg} p-4`}>
+    <div className={`rounded-xl border ${s.ring} ${s.bg} p-4 ${compact ? "p-3" : ""}`}>
       <div className="flex items-start justify-between gap-3">
         <div className="flex items-center gap-2">
           {insight.severity === "high" ? (
@@ -872,18 +1305,21 @@ function InsightCard({ insight }: { insight: Insight }) {
           ) : (
             <AlertTriangle className={`size-4 ${s.text}`} />
           )}
-          <h3 className="text-sm font-semibold text-slate-100">{insight.title}</h3>
+          <h3 className="text-sm font-semibold">{insight.title}</h3>
         </div>
-        <span className={`shrink-0 rounded-full border ${s.ring} px-2 py-0.5 text-[10px] font-medium ${s.text}`}>
+        <Badge variant="outline" className={`shrink-0 ${s.ring} ${s.text}`}>
           {s.label}
-        </span>
+        </Badge>
       </div>
-      <p className="mt-2 text-sm leading-relaxed text-slate-300">{insight.explanation}</p>
+      {!compact && (
+        <p className="mt-2 text-sm leading-relaxed text-muted-foreground">{insight.explanation}</p>
+      )}
+      {compact && (
+        <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">{insight.explanation}</p>
+      )}
       <div className="mt-2.5 flex flex-wrap items-center gap-2">
         {insight.crossProvider && (
-          <span className="rounded-full bg-white/5 px-2 py-0.5 text-[10px] text-slate-300">
-            cross-provider
-          </span>
+          <Badge variant="secondary">cross-provider</Badge>
         )}
         {insight.citationUrl && (
           <a
@@ -951,7 +1387,7 @@ function CodeChip({ system, code }: { system: string; code: string }) {
   );
 }
 
-function Card({
+function SectionCard({
   title,
   icon,
   children,
@@ -961,11 +1397,13 @@ function Card({
   children: React.ReactNode;
 }) {
   return (
-    <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
-      <h3 className="mb-3 flex items-center gap-2 text-sm font-medium text-slate-300">
-        {icon} {title}
-      </h3>
-      {children}
-    </div>
+    <Card>
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2 text-base">
+          {icon} {title}
+        </CardTitle>
+      </CardHeader>
+      <CardContent>{children}</CardContent>
+    </Card>
   );
 }
