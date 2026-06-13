@@ -15,8 +15,10 @@ import {
   ShieldAlert,
   Sparkles,
   Stethoscope,
+  Trash2,
+  Upload,
 } from "lucide-react";
-import { useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import { toFhirBundle } from "@/lib/fhir";
 import type {
@@ -25,11 +27,20 @@ import type {
   MedicationFact,
   PipelineEvent,
   Severity,
-  SourceDoc,
   StageEvent,
 } from "@/lib/types";
 
 type Status = "idle" | "running" | "done";
+
+interface UploadedDocument {
+  id: string;
+  filename: string;
+  label: string;
+  system: string | null;
+  mimeType: string;
+  sizeBytes: number;
+  createdAt: string;
+}
 
 interface LiveStage {
   stage: string;
@@ -44,17 +55,104 @@ const SEVERITY: Record<Severity, { ring: string; text: string; bg: string; label
   low: { ring: "border-sky-500/40", text: "text-sky-300", bg: "bg-sky-500/10", label: "Low" },
 };
 
-export function ConcordApp({ sources }: { sources: SourceDoc[] }) {
+function formatBytes(bytes: number) {
+  if (bytes < 1024) return `${bytes} B`;
+  return `${(bytes / 1024).toFixed(1)} KB`;
+}
+
+export function ConcordApp() {
   const [status, setStatus] = useState<Status>("idle");
   const [stages, setStages] = useState<LiveStage[]>([]);
   const [record, setRecord] = useState<HealthRecord | null>(null);
+  const [documents, setDocuments] = useState<UploadedDocument[]>([]);
+  const [loadingDocs, setLoadingDocs] = useState(true);
+  const [uploading, setUploading] = useState(false);
+  const [storageError, setStorageError] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const refreshDocuments = useCallback(async () => {
+    setLoadingDocs(true);
+    const res = await fetch("/api/documents");
+    const data = (await res.json()) as {
+      configured?: boolean;
+      documents?: UploadedDocument[];
+      error?: string;
+    };
+
+    if (data.configured === false) {
+      setStorageError(data.error ?? "Storage is not configured.");
+      setDocuments([]);
+      setLoadingDocs(false);
+      return;
+    }
+
+    if (!res.ok) {
+      setStorageError(data.error ?? "Storage is not configured.");
+      setDocuments([]);
+      setLoadingDocs(false);
+      return;
+    }
+
+    setStorageError(null);
+    setDocuments(data.documents ?? []);
+    setLoadingDocs(false);
+  }, []);
+
+  useEffect(() => {
+    void refreshDocuments();
+  }, [refreshDocuments]);
+
+  async function uploadFiles(files: FileList | File[]) {
+    if (storageError) return;
+    setUploading(true);
+    setActionError(null);
+
+    try {
+      for (const file of Array.from(files)) {
+        const form = new FormData();
+        form.append("file", file);
+        const res = await fetch("/api/documents", { method: "POST", body: form });
+        const data = (await res.json()) as { error?: string };
+        if (!res.ok) throw new Error(data.error ?? "Upload failed.");
+      }
+      await refreshDocuments();
+    } catch (err) {
+      setActionError((err as Error).message);
+    } finally {
+      setUploading(false);
+    }
+  }
+
+  async function removeDocument(id: string) {
+    setActionError(null);
+    const res = await fetch(`/api/documents/${id}`, { method: "DELETE" });
+    const data = (await res.json()) as { error?: string };
+    if (!res.ok) {
+      setActionError(data.error ?? "Delete failed.");
+      return;
+    }
+    await refreshDocuments();
+  }
 
   async function run() {
+    if (documents.length === 0) return;
     setStatus("running");
     setStages([]);
     setRecord(null);
+    setActionError(null);
 
-    const res = await fetch("/api/reconcile", { method: "POST" });
+    const res = await fetch("/api/reconcile", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({}),
+    });
+    if (!res.ok) {
+      const data = (await res.json()) as { error?: string };
+      setActionError(data.error ?? "Reconciliation failed.");
+      setStatus("idle");
+      return;
+    }
     if (!res.body) return;
 
     const reader = res.body.getReader();
@@ -70,7 +168,12 @@ export function ConcordApp({ sources }: { sources: SourceDoc[] }) {
 
       for (const line of lines) {
         if (!line.trim()) continue;
-        const event = JSON.parse(line) as PipelineEvent;
+        const event = JSON.parse(line) as PipelineEvent | { type: "error"; message: string };
+        if (event.type === "error") {
+          setActionError(event.message);
+          setStatus("idle");
+          return;
+        }
         if (event.type === "stage") applyStage(event);
         else if (event.type === "result") setRecord(event.record);
       }
@@ -103,24 +206,50 @@ export function ConcordApp({ sources }: { sources: SourceDoc[] }) {
     URL.revokeObjectURL(url);
   }
 
+  const canReconcile = documents.length > 0 && !storageError && !uploading && status !== "running";
+
   return (
     <div className="mx-auto w-full max-w-6xl px-5 py-10">
       <Header status={status} />
 
-      <Hero status={status} onRun={run} sourceCount={sources.length} />
+      {storageError && (
+        <div className="mt-6 rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-100">
+          {storageError} Set <code className="text-amber-50">DATABASE_URL</code> and{" "}
+          <code className="text-amber-50">BLOB_READ_WRITE_TOKEN</code>, then run{" "}
+          <code className="text-amber-50">pnpm db:push</code>.
+        </div>
+      )}
+
+      {actionError && (
+        <div className="mt-4 rounded-xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-100">
+          {actionError}
+        </div>
+      )}
+
+      <Hero status={status} onRun={run} canReconcile={canReconcile} documentCount={documents.length} />
 
       <div className="mt-10 grid gap-6 lg:grid-cols-[minmax(0,320px)_minmax(0,1fr)]">
-        <SourcesPanel sources={sources} />
+        <UploadPanel
+          documents={documents}
+          loading={loadingDocs}
+          uploading={uploading}
+          disabled={Boolean(storageError)}
+          fileInputRef={fileInputRef}
+          onPickFiles={() => fileInputRef.current?.click()}
+          onFilesSelected={(files) => void uploadFiles(files)}
+          onRemove={(id) => void removeDocument(id)}
+        />
         <main className="min-w-0 space-y-6">
           {status !== "idle" && <Pipeline stages={stages} />}
           {record && <Results record={record} onExport={downloadFhir} />}
-          {status === "idle" && <IdleHint sourceCount={sources.length} />}
+          {status === "idle" && !record && (
+            <IdleHint documentCount={documents.length} hasStorage={!storageError} />
+          )}
         </main>
       </div>
 
       <footer className="mt-16 border-t border-white/5 pt-6 text-center text-xs text-slate-500">
-        Concord · source files in <code className="text-slate-400">data/sources/</code> · grounded
-        reconciliation with citations to source documents
+        Concord · uploads in Vercel Blob · metadata in Postgres · grounded reconciliation
       </footer>
     </div>
   );
@@ -156,11 +285,13 @@ function Header({ status }: { status: Status }) {
 function Hero({
   status,
   onRun,
-  sourceCount,
+  canReconcile,
+  documentCount,
 }: {
   status: Status;
   onRun: () => void;
-  sourceCount: number;
+  canReconcile: boolean;
+  documentCount: number;
 }) {
   return (
     <section className="mt-10 max-w-3xl">
@@ -168,66 +299,158 @@ function Hero({
         <Sparkles className="size-3.5 text-sky-300" /> Powered by Grok · FHIR-native · grounded
       </div>
       <h1 className="mt-5 text-4xl font-semibold leading-tight tracking-tight sm:text-5xl">
-        The complete picture of your health that{" "}
+        Upload your records.{" "}
         <span className="bg-gradient-to-r from-sky-300 to-indigo-300 bg-clip-text text-transparent">
-          nobody currently has.
+          Catch what falls through the cracks.
         </span>
       </h1>
       <p className="mt-4 text-lg leading-relaxed text-slate-300">
-        Maria sees {sourceCount} providers who don&apos;t share one record. Concord assembles them into a
-        single grounded timeline — and catches the contraindicated prescription that falls through
-        the cracks between them.
+        Drop in visit summaries, lab reports, and pharmacy printouts from different providers. Concord
+        assembles one grounded picture — and flags dangerous oversights no single doctor could see.
       </p>
       <button
         onClick={onRun}
-        disabled={status === "running"}
-        className="mt-7 inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-sky-400 to-indigo-500 px-5 py-3 text-sm font-semibold text-slate-950 shadow-lg shadow-sky-500/20 transition hover:brightness-110 disabled:opacity-60"
+        disabled={status === "running" || !canReconcile}
+        className="mt-7 inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-sky-400 to-indigo-500 px-5 py-3 text-sm font-semibold text-slate-950 shadow-lg shadow-sky-500/20 transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50"
       >
         {status === "running" ? (
           <Loader2 className="size-4 animate-spin" />
         ) : (
           <Activity className="size-4" />
         )}
-        {status === "idle" ? "Reconcile Maria's records" : status === "running" ? "Reconciling…" : "Run again"}
+        {status === "running"
+          ? "Reconciling…"
+          : documentCount === 0
+            ? "Upload records to reconcile"
+            : status === "idle"
+              ? `Reconcile ${documentCount} record${documentCount === 1 ? "" : "s"}`
+              : "Run again"}
       </button>
     </section>
   );
 }
 
-function SourcesPanel({ sources }: { sources: SourceDoc[] }) {
+function UploadPanel({
+  documents,
+  loading,
+  uploading,
+  disabled,
+  fileInputRef,
+  onPickFiles,
+  onFilesSelected,
+  onRemove,
+}: {
+  documents: UploadedDocument[];
+  loading: boolean;
+  uploading: boolean;
+  disabled: boolean;
+  fileInputRef: React.RefObject<HTMLInputElement | null>;
+  onPickFiles: () => void;
+  onFilesSelected: (files: FileList) => void;
+  onRemove: (id: string) => void;
+}) {
+  const [dragOver, setDragOver] = useState(false);
+
   return (
     <aside className="space-y-3">
       <h2 className="flex items-center gap-2 text-sm font-medium text-slate-300">
-        <Layers className="size-4 text-slate-400" /> Source documents ({sources.length})
+        <Layers className="size-4 text-slate-400" /> Your uploads ({documents.length})
       </h2>
-      {sources.map((doc) => (
-        <div key={doc.id} className="rounded-xl border border-white/10 bg-white/[0.03] p-3">
-          <div className="flex items-start gap-2">
-            <FileText className="mt-0.5 size-4 shrink-0 text-slate-500" />
-            <div className="min-w-0">
-              <div className="truncate text-sm font-medium">{doc.label}</div>
-              <div className="truncate text-xs text-slate-400">{doc.system}</div>
-              <div className="mt-0.5 text-xs text-slate-500">{doc.date}</div>
+
+      <div
+        onDragOver={(e) => {
+          e.preventDefault();
+          if (!disabled) setDragOver(true);
+        }}
+        onDragLeave={() => setDragOver(false)}
+        onDrop={(e) => {
+          e.preventDefault();
+          setDragOver(false);
+          if (disabled || !e.dataTransfer.files.length) return;
+          onFilesSelected(e.dataTransfer.files);
+        }}
+        className={`rounded-xl border border-dashed p-4 text-center transition ${
+          dragOver
+            ? "border-sky-400/60 bg-sky-500/10"
+            : "border-white/15 bg-white/[0.02] hover:border-white/25"
+        } ${disabled ? "opacity-50" : ""}`}
+      >
+        <Upload className="mx-auto size-6 text-slate-500" />
+        <p className="mt-2 text-sm text-slate-300">Drop .txt medical records here</p>
+        <p className="mt-1 text-xs text-slate-500">or</p>
+        <button
+          type="button"
+          onClick={onPickFiles}
+          disabled={disabled || uploading}
+          className="mt-2 rounded-lg border border-white/10 bg-white/5 px-3 py-1.5 text-xs font-medium text-slate-200 transition hover:bg-white/10 disabled:opacity-50"
+        >
+          {uploading ? "Uploading…" : "Choose files"}
+        </button>
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept=".txt,.md,text/plain,text/markdown"
+          multiple
+          className="hidden"
+          onChange={(e) => {
+            if (e.target.files?.length) onFilesSelected(e.target.files);
+            e.target.value = "";
+          }}
+        />
+      </div>
+
+      {loading ? (
+        <div className="flex items-center gap-2 text-xs text-slate-500">
+          <Loader2 className="size-3.5 animate-spin" /> Loading uploads…
+        </div>
+      ) : documents.length === 0 ? (
+        <p className="px-1 text-xs leading-relaxed text-slate-500">
+          For the demo, upload the five synthetic records from the repo&apos;s{" "}
+          <code className="text-slate-400">demo-data/</code> folder.
+        </p>
+      ) : (
+        documents.map((doc) => (
+          <div key={doc.id} className="rounded-xl border border-white/10 bg-white/[0.03] p-3">
+            <div className="flex items-start gap-2">
+              <FileText className="mt-0.5 size-4 shrink-0 text-slate-500" />
+              <div className="min-w-0 flex-1">
+                <div className="truncate text-sm font-medium">{doc.label}</div>
+                <div className="truncate text-xs text-slate-400">{doc.filename}</div>
+                <div className="mt-0.5 text-xs text-slate-500">{formatBytes(doc.sizeBytes)}</div>
+              </div>
+              <button
+                type="button"
+                onClick={() => onRemove(doc.id)}
+                disabled={disabled || uploading}
+                className="rounded-md p-1 text-slate-500 transition hover:bg-white/5 hover:text-red-300 disabled:opacity-40"
+                aria-label={`Remove ${doc.filename}`}
+              >
+                <Trash2 className="size-3.5" />
+              </button>
             </div>
           </div>
-        </div>
-      ))}
-      <p className="px-1 text-xs leading-relaxed text-slate-500">
-        Add or replace files in <code className="text-slate-400">data/sources/</code> and update{" "}
-        <code className="text-slate-400">data/manifest.json</code>.
-      </p>
+        ))
+      )}
     </aside>
   );
 }
 
-function IdleHint({ sourceCount }: { sourceCount: number }) {
+function IdleHint({
+  documentCount,
+  hasStorage,
+}: {
+  documentCount: number;
+  hasStorage: boolean;
+}) {
   return (
     <div className="rounded-2xl border border-dashed border-white/10 bg-white/[0.02] p-8 text-center">
       <Stethoscope className="mx-auto size-8 text-slate-600" />
       <p className="mx-auto mt-3 max-w-sm text-sm text-slate-400">
-        Press <span className="font-medium text-slate-200">Reconcile</span> to watch Concord read all{" "}
-        {sourceCount} records, normalize them to standard codes, ground every fact to its source, and run a
-        cross-provider safety check.
+        {documentCount === 0
+          ? hasStorage
+            ? "Upload your medical records on the left, then press Reconcile."
+            : "Configure Postgres + Vercel Blob to enable uploads."
+          : "Press Reconcile to watch Concord read your uploads, normalize them to standard codes, ground every fact to its source, and run a cross-provider safety check."}
       </p>
     </div>
   );
@@ -351,9 +574,6 @@ function Results({ record, onExport }: { record: HealthRecord; onExport: () => v
               <div className="mt-1">
                 {a.snomed && <CodeChip system="SNOMED" code={a.snomed} />}
               </div>
-              <p className="mt-1.5 text-xs text-amber-300/80">
-                Carried into the reconciled record even though cardiology &amp; pharmacy dropped it.
-              </p>
             </div>
           ))}
         </Card>

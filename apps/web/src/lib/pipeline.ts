@@ -1,4 +1,3 @@
-import { loadSourceDocuments } from "./load-data";
 import { hasXai } from "./grok";
 import { MOCK_RECORD } from "./mock-record";
 import type { HealthRecord, PipelineEvent, SourceDoc } from "./types";
@@ -36,7 +35,7 @@ const STAGES: StageDef[] = [
   {
     stage: "reconcile",
     label: "Resolving identity & merging duplicates",
-    detail: () => "1 patient across 5 MRNs · Lisinopril = Zestril · A1c units unified",
+    detail: () => "merging brand/generic names · normalizing units · deduplicating therapies",
     delay: 900,
   },
   {
@@ -68,10 +67,13 @@ const STAGES: StageDef[] = [
  * without changing this event contract or the UI.
  */
 export async function* runPipeline(
-  docs?: SourceDoc[],
+  docs: SourceDoc[],
 ): AsyncGenerator<PipelineEvent> {
-  const sources = docs ?? (await loadSourceDocuments());
-  const record: HealthRecord = { ...MOCK_RECORD, sources };
+  if (docs.length === 0) {
+    throw new Error("Upload at least one source document before reconciling.");
+  }
+
+  const record: HealthRecord = { ...MOCK_RECORD, sources: docs };
 
   for (const s of STAGES) {
     yield { type: "stage", stage: s.stage, label: s.label, status: "start" };
@@ -81,7 +83,7 @@ export async function* runPipeline(
       stage: s.stage,
       label: s.label,
       status: "done",
-      detail: s.detail(sources, record),
+      detail: s.detail(docs, record),
     };
   }
 

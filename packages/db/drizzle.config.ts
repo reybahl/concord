@@ -1,8 +1,9 @@
 import { config } from "dotenv";
 import { defineConfig } from "drizzle-kit";
 
-// Load the monorepo-root .env so `pnpm db:push` works from packages/db.
+// Load monorepo-root env (.env.local overrides .env).
 config({ path: "../../.env" });
+config({ path: "../../.env.local", override: true });
 
 export default defineConfig({
   schema: "./src/schema.ts",

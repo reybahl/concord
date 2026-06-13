@@ -1,9 +1,9 @@
 import { config } from "dotenv";
 import type { NextConfig } from "next";
 
-// Load the monorepo-root .env (single source of truth) for local dev.
-// On Vercel, env vars come from the dashboard / Neon integration instead.
+// Monorepo-root env files (`.env.local` overrides `.env`, e.g. after `vercel env pull`).
 config({ path: "../../.env" });
+config({ path: "../../.env.local", override: true });
 
 const nextConfig: NextConfig = {
   // The @concord/db package ships TypeScript source; let Next transpile it.

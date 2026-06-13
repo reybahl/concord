@@ -1,4 +1,4 @@
-import { jsonb, pgTable, text, timestamp, uuid } from "drizzle-orm/pg-core";
+import { integer, jsonb, pgTable, text, timestamp, uuid } from "drizzle-orm/pg-core";
 
 /**
  * Auth-ready user table. Auth (Better Auth / NextAuth) drops in later and
@@ -8,6 +8,24 @@ export const users = pgTable("users", {
   id: uuid("id").defaultRandom().primaryKey(),
   email: text("email").unique(),
   name: text("name"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+/**
+ * Uploaded source document metadata. Raw bytes live in Vercel Blob; this row
+ * is the pointer + display fields for the UI and pipeline.
+ */
+export const sourceDocuments = pgTable("source_documents", {
+  id: uuid("id").primaryKey(),
+  /** Anonymous session cookie until auth lands; then filter by userId instead. */
+  sessionId: text("session_id").notNull(),
+  userId: uuid("user_id").references(() => users.id),
+  filename: text("filename").notNull(),
+  label: text("label").notNull(),
+  system: text("system"),
+  mimeType: text("mime_type").notNull(),
+  sizeBytes: integer("size_bytes").notNull(),
+  blobUrl: text("blob_url").notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
@@ -25,5 +43,7 @@ export const records = pgTable("records", {
 });
 
 export type User = typeof users.$inferSelect;
+export type SourceDocumentRow = typeof sourceDocuments.$inferSelect;
+export type NewSourceDocumentRow = typeof sourceDocuments.$inferInsert;
 export type RecordRow = typeof records.$inferSelect;
 export type NewRecordRow = typeof records.$inferInsert;

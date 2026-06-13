@@ -10,7 +10,8 @@
     "db:up": "docker compose up -d",
     "db:down": "docker compose down",
     "db:push": "pnpm --filter @concord/db push",
-    "db:studio": "pnpm --filter @concord/db studio"
+    "db:studio": "pnpm --filter @concord/db studio",
+    "blob:setup": "vercel blob create-store concord-uploads --access private --yes && vercel env pull .env.local --yes"
   },
   "devDependencies": {
     "turbo": "^2"
