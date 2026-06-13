@@ -46,6 +46,8 @@ export const records = pgTable("records", {
   /** Which uploaded documents were included in this reconciliation. */
   sourceDocumentIds: text("source_document_ids").array().notNull(),
   reconciled: jsonb("reconciled").notNull(),
+  /** Full pipeline stage + note history for replay in the UI. */
+  pipelineLog: jsonb("pipeline_log"),
   reconciledAt: timestamp("reconciled_at").defaultNow().notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });

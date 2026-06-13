@@ -1,5 +1,6 @@
 import { isStorageConfigured, loadSourceDocumentsForSession } from "@/lib/documents";
 import { apiError } from "@/lib/api";
+import { isPersistablePipelineEvent, type PersistedPipelineEvent } from "@/lib/pipeline-log";
 import { runPipeline } from "@/lib/pipeline";
 import { saveRecordForSession } from "@/lib/reconciled-records";
 import { getOrCreateSessionId } from "@/lib/session";
@@ -31,15 +32,23 @@ export async function POST(req: Request) {
   }
 
   const sourceDocumentIds = sources.map((s) => s.id);
+  const pipelineEvents: PersistedPipelineEvent[] = [];
   const encoder = new TextEncoder();
 
   const stream = new ReadableStream<Uint8Array>({
     async start(controller) {
       try {
         for await (const event of runPipeline(sources)) {
+          if (isPersistablePipelineEvent(event)) {
+            pipelineEvents.push(event);
+          }
+
           if (event.type === "result") {
             try {
-              await saveRecordForSession(sessionId, sourceDocumentIds, event.record);
+              await saveRecordForSession(sessionId, sourceDocumentIds, event.record, {
+                events: pipelineEvents,
+                completedAt: new Date().toISOString(),
+              });
             } catch (saveErr) {
               controller.enqueue(
                 encoder.encode(
@@ -52,6 +61,7 @@ export async function POST(req: Request) {
               return;
             }
           }
+
           controller.enqueue(encoder.encode(`${JSON.stringify(event)}\n`));
         }
       } catch (err) {

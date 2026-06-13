@@ -20,6 +20,7 @@ import {
 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
+import { foldPipelineEvents } from "@/lib/pipeline-log";
 import { toFhirBundle } from "@/lib/fhir";
 import type {
   HealthRecord,
@@ -49,6 +50,10 @@ interface SavedRecordMeta {
   record: HealthRecord;
   sourceDocumentIds: string[];
   reconciledAt: string;
+  pipelineLog: {
+    events: Array<StageEvent | NoteEvent>;
+    completedAt: string;
+  } | null;
 }
 
 interface LiveNote {
@@ -124,6 +129,9 @@ export function ConcordApp() {
     setRecord(data.saved.record);
     setSavedSourceDocumentIds(data.saved.sourceDocumentIds);
     setReconciledAt(data.saved.reconciledAt);
+    setStages(
+      data.saved.pipelineLog ? foldPipelineEvents(data.saved.pipelineLog.events) : [],
+    );
     setStatus("done");
   }, []);
 
@@ -338,7 +346,7 @@ export function ConcordApp() {
         />
         <main className="min-w-0 space-y-6">
           {(status === "running" || (status === "done" && stages.length > 0)) && (
-            <Pipeline stages={stages} />
+            <Pipeline stages={stages} completedAt={reconciledAt} />
           )}
           {record && status !== "running" && (
             <Results
@@ -611,10 +619,28 @@ const NOTE_TONE: Record<NonNullable<LiveNote["tone"]>, string> = {
   flag: "text-amber-300 border-amber-500/40",
 };
 
-function Pipeline({ stages }: { stages: LiveStage[] }) {
+function Pipeline({
+  stages,
+  completedAt,
+}: {
+  stages: LiveStage[];
+  completedAt?: string | null;
+}) {
+  const completedLabel = completedAt
+    ? new Date(completedAt).toLocaleString(undefined, {
+        dateStyle: "medium",
+        timeStyle: "short",
+      })
+    : null;
+
   return (
     <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-5">
-      <h2 className="mb-4 text-sm font-medium text-slate-300">Reconciliation pipeline</h2>
+      <div className="mb-4 flex flex-wrap items-baseline justify-between gap-2">
+        <h2 className="text-sm font-medium text-slate-300">Reconciliation pipeline</h2>
+        {completedLabel && (
+          <span className="text-xs text-slate-500">Completed {completedLabel}</span>
+        )}
+      </div>
       <ol className="space-y-3">
         {stages.map((s) => (
           <li key={s.stage} className="flex items-start gap-3">

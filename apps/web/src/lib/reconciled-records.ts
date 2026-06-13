@@ -1,6 +1,7 @@
 import { db, isDbConfigured, records } from "@concord/db";
 import { desc, eq } from "drizzle-orm";
 
+import type { PipelineRunLog } from "./pipeline-log";
 import type { HealthRecord } from "./types";
 
 export interface SavedRecordDto {
@@ -9,6 +10,7 @@ export interface SavedRecordDto {
   record: HealthRecord;
   sourceDocumentIds: string[];
   reconciledAt: string;
+  pipelineLog: PipelineRunLog | null;
 }
 
 function requireDb() {
@@ -44,6 +46,7 @@ export async function saveRecordForSession(
   sessionId: string,
   sourceDocumentIds: string[],
   record: HealthRecord,
+  pipelineLog: PipelineRunLog,
 ): Promise<SavedRecordDto> {
   const title = record.patient.name?.trim() || "Reconciled health record";
   const reconciledAt = new Date();
@@ -55,6 +58,7 @@ export async function saveRecordForSession(
       title,
       sourceDocumentIds,
       reconciled: record,
+      pipelineLog,
       reconciledAt,
     })
     .onConflictDoUpdate({
@@ -63,6 +67,7 @@ export async function saveRecordForSession(
         title,
         sourceDocumentIds,
         reconciled: record,
+        pipelineLog,
         reconciledAt,
       },
     })
@@ -79,5 +84,6 @@ function toDto(row: typeof records.$inferSelect): SavedRecordDto {
     record: row.reconciled as HealthRecord,
     sourceDocumentIds: row.sourceDocumentIds,
     reconciledAt: row.reconciledAt.toISOString(),
+    pipelineLog: (row.pipelineLog as PipelineRunLog | null) ?? null,
   };
 }
