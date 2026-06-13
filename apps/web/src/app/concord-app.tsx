@@ -18,6 +18,7 @@ import {
   Upload,
 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 
 import { AppSidebar, type DashboardView } from "@/components/app-sidebar";
 import { GuardianView } from "@/components/guardian-view";
@@ -50,8 +51,8 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 import { PipelinePanel } from "@/components/pipeline-panel";
-import { WorkflowOverview } from "@/components/workflow-overview";
 import { foldPipelineEvents, type PipelineStageSnapshot } from "@/lib/pipeline-log";
+import { dashboardPath } from "@/lib/dashboard-routes";
 import { toFhirBundle } from "@/lib/fhir";
 import type {
   HealthRecord,
@@ -130,8 +131,10 @@ function describeStaleChange(savedIds: string[], currentIds: string[]): string {
   return "Uploads changed — run again to update your saved record.";
 }
 
-export function ConcordApp() {
-  const [activeView, setActiveView] = useState<DashboardView>("overview");
+export function ConcordApp({ view }: { view: DashboardView }) {
+  const router = useRouter();
+  const navigate = useCallback((next: DashboardView) => router.push(dashboardPath(next)), [router]);
+
   const [status, setStatus] = useState<Status>("idle");
   const [stages, setStages] = useState<LiveStage[]>([]);
   const [record, setRecord] = useState<HealthRecord | null>(null);
@@ -230,7 +233,7 @@ export function ConcordApp() {
 
   async function run() {
     if (documents.length === 0) return;
-    setActiveView("upload");
+    navigate("upload");
     setStatus("running");
     setStages([]);
     setRecord(null);
@@ -374,13 +377,12 @@ export function ConcordApp() {
     },
   };
 
-  const { title: pageTitle, description: pageDescription } = pageTitles[activeView];
+  const { title: pageTitle, description: pageDescription } = pageTitles[view];
 
   return (
     <SidebarProvider>
       <AppSidebar
-        activeView={activeView}
-        onNavigate={setActiveView}
+        activeView={view}
         documentCount={documents.length}
         highFindingCount={highFindingCount}
         statusLabel={statusLabel}
@@ -414,11 +416,11 @@ export function ConcordApp() {
             </Alert>
           )}
 
-          {recordStale && staleMessage && activeView !== "upload" && (
+          {recordStale && staleMessage && view !== "upload" && (
             <StaleBanner message={staleMessage} onReconcile={run} canReconcile={canReconcile} />
           )}
 
-          {activeView === "overview" && (
+          {view === "overview" && (
             <OverviewView
               record={record}
               documents={documents}
@@ -428,11 +430,11 @@ export function ConcordApp() {
               reconciledAt={reconciledAt}
               canReconcile={canReconcile}
               onRun={run}
-              onNavigate={setActiveView}
+              onNavigate={navigate}
             />
           )}
 
-          {activeView === "upload" && (
+          {view === "upload" && (
             <UploadView
               documents={documents}
               loadingDocs={loadingDocs}
@@ -453,25 +455,25 @@ export function ConcordApp() {
             />
           )}
 
-          {activeView === "findings" && (
+          {view === "findings" && (
             <FindingsView
               record={record}
               stale={recordStale}
               reconciledAt={reconciledAt}
               onExport={downloadFhir}
-              onNavigate={setActiveView}
+              onNavigate={navigate}
             />
           )}
 
-          {activeView === "record" && (
+          {view === "record" && (
             <RecordView record={record} stale={recordStale} onExport={downloadFhir} />
           )}
 
-          {activeView === "guardian" && (
+          {view === "guardian" && (
             <GuardianView
               record={record}
               onLearned={() => void refreshDocuments()}
-              onGoToUpload={() => setActiveView("upload")}
+              onGoToUpload={() => navigate("upload")}
             />
           )}
         </div>
@@ -626,15 +628,6 @@ function OverviewView({
         </p>
       )}
 
-      {stages.length > 0 || documents.length > 0 ? (
-        <WorkflowOverview
-          documentCount={documents.length}
-          pipelineRunning={status === "running"}
-          stages={stages}
-          compact
-        />
-      ) : null}
-
       {stages.length > 0 && (
         <PipelinePanel stages={stages} completedAt={reconciledAt} />
       )}
@@ -772,11 +765,6 @@ function UploadView({
           onRemove={onRemove}
         />
         <div className="min-w-0 space-y-6">
-          <WorkflowOverview
-            documentCount={documents.length}
-            pipelineRunning={status === "running"}
-            stages={stages}
-          />
           {(status === "running" || (status === "done" && stages.length > 0)) && (
             <PipelinePanel stages={stages} completedAt={reconciledAt} />
           )}

@@ -9,6 +9,8 @@ import {
   Upload,
 } from "lucide-react";
 
+import Link from "next/link";
+
 import {
   Sidebar,
   SidebarContent,
@@ -23,8 +25,7 @@ import {
   SidebarMenuItem,
   SidebarRail,
 } from "@/components/ui/sidebar";
-
-export type DashboardView = "overview" | "upload" | "findings" | "record" | "guardian";
+import { type DashboardView, dashboardPath } from "@/lib/dashboard-routes";
 
 const NAV: {
   id: DashboardView;
@@ -38,16 +39,16 @@ const NAV: {
   { id: "guardian", title: "Guardian", icon: ShieldCheck },
 ];
 
+export type { DashboardView };
+
 export function AppSidebar({
   activeView,
-  onNavigate,
   documentCount,
   highFindingCount,
   statusLabel,
   ...props
 }: React.ComponentProps<typeof Sidebar> & {
   activeView: DashboardView;
-  onNavigate: (view: DashboardView) => void;
   documentCount: number;
   highFindingCount: number;
   statusLabel: string;
@@ -78,7 +79,7 @@ export function AppSidebar({
                   <SidebarMenuButton
                     isActive={activeView === item.id}
                     tooltip={item.title}
-                    onClick={() => onNavigate(item.id)}
+                    render={<Link href={dashboardPath(item.id)} />}
                   >
                     <item.icon />
                     <span>{item.title}</span>
