@@ -13,7 +13,6 @@ import {
   Loader2,
   Pill,
   ShieldAlert,
-  Sparkles,
   Stethoscope,
   Trash2,
   Upload,
@@ -92,7 +91,7 @@ interface LiveStage {
 const SEVERITY: Record<Severity, { ring: string; text: string; bg: string; label: string }> = {
   high: { ring: "border-red-500/50", text: "text-red-300", bg: "bg-red-500/10", label: "High" },
   medium: { ring: "border-amber-500/40", text: "text-amber-300", bg: "bg-amber-500/10", label: "Medium" },
-  low: { ring: "border-sky-500/40", text: "text-sky-300", bg: "bg-sky-500/10", label: "Low" },
+  low: { ring: "border-border", text: "text-muted-foreground", bg: "bg-muted/30", label: "Low" },
 };
 
 function formatBytes(bytes: number) {
@@ -377,12 +376,12 @@ export function ConcordApp() {
         statusLabel={statusLabel}
       />
       <SidebarInset>
-        <header className="flex h-14 shrink-0 items-center gap-2 border-b px-4">
-          <SidebarTrigger className="-ml-1" />
-          <Separator orientation="vertical" className="mr-2 h-4" />
-          <div className="min-w-0 flex-1">
-            <h1 className="truncate text-sm font-semibold">{pageTitle}</h1>
-            <p className="truncate text-xs text-muted-foreground">{pageDescription}</p>
+        <header className="flex h-14 shrink-0 items-center gap-3 border-b px-4">
+          <SidebarTrigger className="shrink-0" />
+          <Separator orientation="vertical" className="h-4 shrink-0" />
+          <div className="flex min-w-0 flex-1 flex-col justify-center gap-0.5 leading-none">
+            <h1 className="truncate text-sm font-semibold leading-tight">{pageTitle}</h1>
+            <p className="truncate text-xs text-muted-foreground leading-tight">{pageDescription}</p>
           </div>
           <StatusBadge status={status} hasRecord={Boolean(record)} stale={recordStale} />
         </header>
@@ -473,7 +472,7 @@ function StatusBadge({
 }) {
   if (status === "running") {
     return (
-      <Badge variant="secondary" className="gap-1 border-sky-500/30 bg-sky-500/10 text-sky-300">
+      <Badge variant="secondary" className="gap-1">
         <Loader2 className="size-3 animate-spin" /> Reconciling
       </Badge>
     );
@@ -482,7 +481,7 @@ function StatusBadge({
     return <Badge variant="outline" className="border-amber-500/40 text-amber-300">Outdated</Badge>;
   }
   if (hasRecord) {
-    return <Badge variant="outline" className="border-emerald-500/40 text-emerald-300">Reconciled</Badge>;
+    return <Badge variant="outline">Reconciled</Badge>;
   }
   return <Badge variant="secondary">Ready</Badge>;
 }
@@ -497,7 +496,7 @@ function StaleBanner({
   canReconcile: boolean;
 }) {
   return (
-    <Alert className="border-amber-500/30 bg-amber-500/10 text-amber-100">
+    <Alert className="border-amber-500/40 text-amber-300">
       <AlertTriangle className="text-amber-300" />
       <AlertTitle>Record may be outdated</AlertTitle>
       <AlertDescription className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -507,7 +506,7 @@ function StaleBanner({
           variant="outline"
           onClick={onReconcile}
           disabled={!canReconcile}
-          className="shrink-0 border-amber-400/40 bg-amber-400/10 text-amber-100 hover:bg-amber-400/20"
+          className="shrink-0 border-amber-500/40 text-amber-300"
         >
           Update reconciliation
         </Button>
@@ -554,11 +553,11 @@ function OverviewView({
 
   return (
     <div className="space-y-6">
-      <Card className="overflow-hidden border-sky-500/20 bg-gradient-to-br from-sky-500/5 to-indigo-500/5">
+      <Card>
         <CardHeader>
-          <div className="inline-flex w-fit items-center gap-2 rounded-full border bg-background/50 px-3 py-1 text-xs text-muted-foreground">
-            <Sparkles className="size-3.5 text-sky-400" /> Powered by Grok · FHIR-native · grounded
-          </div>
+          <CardDescription className="text-xs uppercase tracking-wide">
+            Powered by Grok · FHIR-native · grounded
+          </CardDescription>
           <CardTitle className="text-2xl font-semibold tracking-tight sm:text-3xl">
             {record?.patient.name ?? "Your health record"}
           </CardTitle>
@@ -607,7 +606,7 @@ function OverviewView({
         <p className="text-xs text-muted-foreground">
           Last reconciled {reconciledLabel}
           {record?.meta?.pipeline === "live" && (
-            <Badge variant="outline" className="ml-2 border-emerald-500/30 text-emerald-300">
+            <Badge variant="outline" className="ml-2">
               Live Grok
             </Badge>
           )}
@@ -657,7 +656,7 @@ function StatCard({
   highlight?: boolean;
 }) {
   return (
-    <Card className={highlight ? "border-destructive/30" : undefined}>
+    <Card className={highlight ? "border-red-500/30" : undefined}>
       <CardHeader className="pb-2">
         <CardDescription>{label}</CardDescription>
         <CardTitle className="text-3xl tabular-nums">{value}</CardTitle>
@@ -887,10 +886,8 @@ function UploadPanel({
             if (disabled || !e.dataTransfer.files.length) return;
             onFilesSelected(e.dataTransfer.files);
           }}
-          className={`rounded-xl border border-dashed p-6 text-center transition ${
-            dragOver
-              ? "border-sky-400/60 bg-sky-500/10"
-              : "border-border bg-muted/20 hover:border-muted-foreground/30"
+          className={`border border-dashed p-6 text-center transition ${
+            dragOver ? "border-foreground/30 bg-muted/40" : "border-border bg-muted/20"
           } ${disabled ? "opacity-50" : ""}`}
         >
           <Upload className="mx-auto size-6 text-muted-foreground" />
@@ -932,7 +929,7 @@ function UploadPanel({
           documents.map((doc) => (
             <div
               key={doc.id}
-              className="flex items-start gap-2 rounded-lg border bg-muted/20 p-3"
+              className="flex items-start gap-2 border bg-muted/20 p-3"
             >
               <FileText className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
               <div className="min-w-0 flex-1">
@@ -982,9 +979,9 @@ function IdleHint({
 }
 
 const NOTE_TONE: Record<NonNullable<LiveNote["tone"]>, string> = {
-  info: "text-slate-400 border-white/10",
-  model: "text-sky-300 border-sky-500/30",
-  merge: "text-emerald-300 border-emerald-500/30",
+  info: "text-muted-foreground border-border",
+  model: "text-muted-foreground border-border",
+  merge: "text-muted-foreground border-border",
   flag: "text-amber-300 border-amber-500/40",
 };
 
@@ -1016,9 +1013,9 @@ function Pipeline({
             <li key={s.stage} className="flex items-start gap-3">
               <span className="mt-0.5">
                 {s.status === "done" ? (
-                  <CheckCircle2 className="size-5 text-emerald-400" />
+                  <CheckCircle2 className="size-5 text-muted-foreground" />
                 ) : (
-                  <Loader2 className="size-5 animate-spin text-sky-400" />
+                  <Loader2 className="size-5 animate-spin text-muted-foreground" />
                 )}
               </span>
               <div className="min-w-0 flex-1">
@@ -1086,12 +1083,10 @@ function FindingsContent({
         <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
           {savedLabel && <span>{savedLabel}</span>}
           {record.meta?.pipeline === "live" && (
-            <Badge variant="outline" className="border-emerald-500/30 text-emerald-300">
-              Live Grok
-            </Badge>
+            <Badge variant="outline">Live Grok</Badge>
           )}
           {stale && (
-            <Badge variant="outline" className="border-amber-500/30 text-amber-200">
+            <Badge variant="outline" className="border-amber-500/30 text-amber-300">
               May be outdated
             </Badge>
           )}
@@ -1111,7 +1106,7 @@ function FindingsContent({
                     href={s.url}
                     target="_blank"
                     rel="noreferrer"
-                    className="text-xs text-sky-300 underline-offset-2 hover:underline"
+                    className="text-xs text-foreground underline-offset-2 hover:underline"
                   >
                     {s.title?.trim() || s.url} ↗
                   </a>
@@ -1175,7 +1170,7 @@ function RecordContent({
         </TabsList>
 
         <TabsContent value="medications" className="mt-4">
-          <SectionCard title="Medications" icon={<Pill className="size-4 text-sky-300" />}>
+          <SectionCard title="Medications" icon={<Pill className="size-4 text-muted-foreground" />}>
             <div className="space-y-2.5">
               {record.medications.map((m) => (
                 <MedRow key={m.id} med={m} />
@@ -1185,7 +1180,7 @@ function RecordContent({
         </TabsContent>
 
         <TabsContent value="labs" className="mt-4">
-          <SectionCard title="Labs & trends" icon={<FlaskConical className="size-4 text-sky-300" />}>
+          <SectionCard title="Labs & trends" icon={<FlaskConical className="size-4 text-muted-foreground" />}>
             <div className="space-y-3">
               {record.labs.map((lab) => (
                 <div key={lab.id}>
@@ -1197,7 +1192,7 @@ function RecordContent({
                     {lab.series.map((p, idx) => (
                       <span
                         key={idx}
-                        className="rounded-md bg-muted px-1.5 py-0.5 font-mono text-xs"
+                        className="bg-muted px-1.5 py-0.5 font-mono text-xs"
                         title={p.reported ? `reported: ${p.reported}` : undefined}
                       >
                         {p.value ?? p.reported} {p.value != null ? p.unit : ""}
@@ -1213,7 +1208,7 @@ function RecordContent({
         </TabsContent>
 
         <TabsContent value="conditions" className="mt-4">
-          <SectionCard title="Conditions" icon={<Activity className="size-4 text-sky-300" />}>
+          <SectionCard title="Conditions" icon={<Activity className="size-4 text-muted-foreground" />}>
             <div className="space-y-2">
               {record.conditions.map((c) => (
                 <div key={c.id} className="text-sm">
@@ -1236,7 +1231,7 @@ function RecordContent({
         </TabsContent>
 
         <TabsContent value="allergies" className="mt-4">
-          <SectionCard title="Allergies" icon={<AlertTriangle className="size-4 text-sky-300" />}>
+          <SectionCard title="Allergies" icon={<AlertTriangle className="size-4 text-muted-foreground" />}>
             {record.allergies.map((a) => (
               <div key={a.id} className="text-sm">
                 <span>{a.display}</span>
@@ -1264,7 +1259,7 @@ function RecordAlerts({
 }) {
   if (isFallback) {
     return (
-      <Alert className="border-amber-500/30 bg-amber-500/10 text-amber-100">
+      <Alert className="border-amber-500/40 text-amber-300">
         <AlertTitle>Reference record</AlertTitle>
         <AlertDescription>
           Grok was unavailable. Run reconciliation again for live analysis with verified citations.
@@ -1274,7 +1269,7 @@ function RecordAlerts({
   }
   if (!hasWebCitations && pipeline === "live") {
     return (
-      <Alert className="border-amber-500/25 bg-amber-500/10 text-amber-100">
+      <Alert className="border-amber-500/40 text-amber-300">
         <AlertTitle>Analysis incomplete</AlertTitle>
         <AlertDescription>
           Reconciliation succeeded but web search did not complete. Run again to retry citations.
@@ -1284,7 +1279,7 @@ function RecordAlerts({
   }
   if (!hasWebCitations && !pipeline) {
     return (
-      <Alert className="border-sky-500/25 bg-sky-500/10 text-sky-100">
+      <Alert>
         <AlertDescription>
           No web citations on this saved record. Run again to re-analyze with live Grok web search.
         </AlertDescription>
@@ -1297,7 +1292,7 @@ function RecordAlerts({
 function InsightCard({ insight, compact }: { insight: Insight; compact?: boolean }) {
   const s = SEVERITY[insight.severity];
   return (
-    <div className={`rounded-xl border ${s.ring} ${s.bg} p-4 ${compact ? "p-3" : ""}`}>
+    <div className={`border ${s.ring} ${s.bg} p-4 ${compact ? "p-3" : ""}`}>
       <div className="flex items-start justify-between gap-3">
         <div className="flex items-center gap-2">
           {insight.severity === "high" ? (
@@ -1326,7 +1321,7 @@ function InsightCard({ insight, compact }: { insight: Insight; compact?: boolean
             href={insight.citationUrl}
             target="_blank"
             rel="noreferrer"
-            className="text-[11px] text-sky-300 underline-offset-2 hover:underline"
+            className="text-[11px] text-foreground underline-offset-2 hover:underline"
           >
             {insight.citationLabel ?? "source"} ↗
           </a>
@@ -1338,28 +1333,28 @@ function InsightCard({ insight, compact }: { insight: Insight; compact?: boolean
 
 function MedRow({ med }: { med: MedicationFact }) {
   return (
-    <div className="rounded-lg bg-white/[0.03] p-2.5">
+    <div className="border bg-muted/20 p-2.5">
       <div className="flex items-center justify-between gap-2">
-        <span className="text-sm font-medium text-slate-200">{med.display}</span>
+        <span className="text-sm font-medium">{med.display}</span>
         {med.status === "acute" && (
-          <span className="rounded bg-purple-500/15 px-1.5 py-0.5 text-[10px] text-purple-300">acute</span>
+          <span className="border bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">acute</span>
         )}
       </div>
-      {med.sig && <div className="text-xs text-slate-400">{med.sig}</div>}
+      {med.sig && <div className="text-xs text-muted-foreground">{med.sig}</div>}
       <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
         {med.rxnorm && <CodeChip system="RxNorm" code={med.rxnorm} />}
         {med.aliases && med.aliases.length > 1 && (
-          <span className="text-[10px] text-slate-500">merged from {med.aliases.length} names</span>
+          <span className="text-[10px] text-muted-foreground">merged from {med.aliases.length} names</span>
         )}
         {med.reviewNeeded && (
-          <span className="rounded bg-amber-500/15 px-1.5 py-0.5 text-[10px] text-amber-300">
+          <span className="border border-amber-500/30 bg-amber-500/10 px-1.5 py-0.5 text-[10px] text-amber-300">
             duplicate risk
           </span>
         )}
       </div>
       <div className="mt-1 flex flex-wrap gap-1">
         {med.provenance.map((p, idx) => (
-          <span key={idx} className="rounded bg-white/5 px-1.5 py-0.5 text-[10px] text-slate-400">
+          <span key={idx} className="bg-muted px-1.5 py-0.5 text-[10px] text-muted-foreground">
             {p.sourceLabel}
           </span>
         ))}
@@ -1381,7 +1376,7 @@ function TrendBadge({ trend }: { trend?: string }) {
 
 function CodeChip({ system, code }: { system: string; code: string }) {
   return (
-    <span className="rounded bg-white/5 px-1.5 py-0.5 font-mono text-[10px] text-slate-400">
+    <span className="bg-muted px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground">
       {system} {code}
     </span>
   );

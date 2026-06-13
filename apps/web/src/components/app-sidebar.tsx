@@ -52,14 +52,16 @@ export function AppSidebar({
 }) {
   return (
     <Sidebar collapsible="icon" {...props}>
-      <SidebarHeader className="border-b border-sidebar-border">
-        <div className="flex items-center gap-2 px-1 py-0.5 group-data-[collapsible=icon]:justify-center">
-          <div className="grid size-8 shrink-0 place-items-center rounded-lg bg-gradient-to-br from-sky-400 to-indigo-500 text-sm font-bold text-slate-950">
+      <SidebarHeader className="h-14 shrink-0 flex-row items-center border-b border-sidebar-border px-3 py-0">
+        <div className="flex h-full w-full min-w-0 items-center gap-2 group-data-[collapsible=icon]:justify-center">
+          <div className="grid size-8 shrink-0 place-items-center border border-border bg-muted text-sm font-bold leading-none text-foreground">
             ◇
           </div>
-          <div className="min-w-0 group-data-[collapsible=icon]:hidden">
-            <div className="truncate text-sm font-semibold">Concord</div>
-            <div className="truncate text-xs text-muted-foreground">Health reconciliation</div>
+          <div className="min-w-0 leading-none group-data-[collapsible=icon]:hidden">
+            <div className="truncate text-sm font-semibold leading-tight">Concord</div>
+            <div className="truncate text-xs text-muted-foreground leading-tight">
+              Health reconciliation
+            </div>
           </div>
         </div>
       </SidebarHeader>
@@ -82,7 +84,7 @@ export function AppSidebar({
                       <SidebarMenuBadge>{documentCount}</SidebarMenuBadge>
                     )}
                     {item.id === "findings" && highFindingCount > 0 && (
-                      <SidebarMenuBadge className="bg-destructive/20 text-destructive">
+                      <SidebarMenuBadge className="border border-red-500/40 bg-red-500/10 text-red-300">
                         {highFindingCount}
                       </SidebarMenuBadge>
                     )}
@@ -96,7 +98,7 @@ export function AppSidebar({
 
       <SidebarFooter className="border-t border-sidebar-border">
         <div className="flex items-center gap-2 px-1 py-1 text-xs text-muted-foreground group-data-[collapsible=icon]:justify-center">
-          <Activity className="size-3.5 shrink-0 text-sky-400" />
+          <Activity className="size-3.5 shrink-0" />
           <span className="truncate group-data-[collapsible=icon]:hidden">{statusLabel}</span>
         </div>
       </SidebarFooter>
