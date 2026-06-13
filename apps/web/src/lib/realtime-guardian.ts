@@ -209,7 +209,10 @@ export class GuardianSession {
       case "conversation.item.input_audio_transcription.completed": {
         const text = (readText(event) || this.roomBuffer).trim();
         this.roomBuffer = "";
-        if (text) {
+        // The server can emit a duplicate "completed" for the same turn; ignore
+        // it so we neither show it twice nor re-run the assessment.
+        if (text && text !== this.lastRoomFinal) {
+          this.lastRoomFinal = text;
           this.config.onTranscript?.("room", text, true);
           void this.handleRoomUtterance(text);
         }
