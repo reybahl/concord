@@ -13,6 +13,8 @@
  * spoken aloud is produced deliberately, server-side and grounded in the record.
  */
 
+import { postGuardianSignal } from "./room-channel";
+
 const REALTIME_URL = "wss://api.x.ai/v1/realtime";
 const SAMPLE_RATE = 24000;
 
@@ -290,6 +292,8 @@ export class GuardianSession {
     window.setTimeout(() => {
       this.guardianSpeaking = false;
       this.sanctionedResponseId = null;
+      // Let the simulated room resume now that we've finished speaking.
+      postGuardianSignal({ type: "guardian-idle" });
       if (!this.closed) this.setStatus("listening");
     }, remainingMs + 250);
   }
@@ -376,6 +380,8 @@ export class GuardianSession {
     this.awaitingSanctioned = true;
     this.guardianSpeaking = true;
     this.setStatus("speaking");
+    // Tell the simulated room (other tab) to hold while we speak.
+    postGuardianSignal({ type: "guardian-speaking" });
     this.send({
       type: "conversation.item.create",
       item: {

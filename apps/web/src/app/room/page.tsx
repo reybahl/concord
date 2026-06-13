@@ -1,9 +1,10 @@
 "use client";
 
-import { Loader2, Play, Square, Stethoscope, User } from "lucide-react";
+import { Loader2, Play, ShieldAlert, Square, Stethoscope, User } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { Button } from "@/components/ui/button";
+import { subscribeGuardianSignal } from "@/lib/room-channel";
 import {
   RoomSimulator,
   type RoomAnalysers,
@@ -39,6 +40,7 @@ export default function RoomPage() {
   const [lines, setLines] = useState<Line[]>([]);
   const [partial, setPartial] = useState<{ doctor: string; patient: string }>({ doctor: "", patient: "" });
   const [analysers, setAnalysers] = useState<RoomAnalysers | null>(null);
+  const [endedByGuardian, setEndedByGuardian] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [starting, setStarting] = useState(false);
 
@@ -47,10 +49,26 @@ export default function RoomPage() {
 
   useEffect(() => () => simRef.current?.stop(), []);
 
+  // When the Guardian (other tab) speaks up, the visit is over — end it.
+  useEffect(
+    () =>
+      subscribeGuardianSignal((signal) => {
+        if (signal.type !== "guardian-speaking" || !simRef.current) return;
+        simRef.current.stop();
+        simRef.current = null;
+        setStatus("done");
+        setActive(null);
+        setAnalysers(null);
+        setEndedByGuardian(true);
+      }),
+    [],
+  );
+
   const start = useCallback(async () => {
     setStarting(true);
     setError(null);
     setLines([]);
+    setEndedByGuardian(false);
     setPartial({ doctor: "", patient: "" });
     try {
       const res = await fetch("/api/room/start", { method: "POST" });
@@ -113,17 +131,24 @@ export default function RoomPage() {
           who="doctor"
           analyser={analysers?.doctor ?? null}
           active={active === "doctor"}
+          dim={endedByGuardian}
           partial={partial.doctor}
         />
         <SpeakerPanel
           who="patient"
           analyser={analysers?.patient ?? null}
           active={active === "patient"}
+          dim={endedByGuardian}
           partial={partial.patient}
         />
       </section>
 
       <div className="mx-auto mt-8 flex w-full max-w-5xl flex-col items-center gap-4">
+        {endedByGuardian && (
+          <div className="flex items-center gap-2 rounded-full border border-emerald-500/40 bg-emerald-500/10 px-4 py-1.5 text-sm font-medium text-emerald-300">
+            <ShieldAlert className="size-4" /> Concord stepped in — visit ended
+          </div>
+        )}
         {running ? (
           <Button size="lg" variant="outline" onClick={stop}>
             <Square /> Stop visit
@@ -146,19 +171,21 @@ function SpeakerPanel({
   who,
   analyser,
   active,
+  dim,
   partial,
 }: {
   who: RoomSpeaker;
   analyser: AnalyserNode | null;
   active: boolean;
+  dim?: boolean;
   partial: string;
 }) {
   const { label, role, color, Icon } = SPEAKER[who];
   return (
     <div
-      className={`relative flex flex-col items-center overflow-hidden rounded-2xl border bg-card/60 p-8 transition-colors ${
+      className={`relative flex flex-col items-center overflow-hidden rounded-2xl border bg-card/60 p-8 transition-all ${
         active ? "border-foreground/20" : "border-border/60"
-      }`}
+      } ${dim ? "opacity-50" : ""}`}
       style={active ? { boxShadow: `0 0 0 1px ${color}33, 0 0 60px -20px ${color}` } : undefined}
     >
       <div
