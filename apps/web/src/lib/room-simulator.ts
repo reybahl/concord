@@ -111,13 +111,15 @@ export class RoomSimulator {
   }
 
   private async loop(): Promise<void> {
+    const rounds = Math.max(this.config.doctorBeats.length, this.config.patientBeats.length);
     let round = 0;
-    while (this.running) {
+    while (this.running && round < rounds) {
       await this.turn("doctor", this.doctor!, this.config.doctorBeats[round] ?? this.config.doctorFree);
       if (!this.running) break;
       await this.turn("patient", this.patient!, this.config.patientBeats[round] ?? this.config.patientFree);
       round += 1;
     }
+    if (this.running) this.stop();
   }
 
   /** One speaker turn: relay the other speaker's last line, then generate + speak. */

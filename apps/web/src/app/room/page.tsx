@@ -121,8 +121,8 @@ export default function RoomPage() {
         </p>
         <h1 className="mt-1 text-2xl font-semibold">The exam room</h1>
         <p className="mx-auto mt-2 max-w-xl text-sm leading-6 text-muted-foreground">
-          Two AI agents play out a routine follow-up. Keep this tab playing out loud — your Guardian, in the
-          other tab, is listening through the microphone and will speak up if anything is unsafe.
+          A follow-up visit that starts with record-aware orders, then takes a wrong turn. Keep this tab playing
+          out loud — your Guardian listens and will log green checks before speaking up when something is unsafe.
         </p>
       </header>
 
@@ -243,7 +243,7 @@ function Waveform({ analyser, color, active }: { analyser: AnalyserNode | null; 
         analyser.getByteTimeDomainData(data);
         const step = cssWidth / data.length;
         for (let i = 0; i < data.length; i++) {
-          const v = (data[i] - 128) / 128; // -1..1
+          const v = (data[i] - 128) / 128;
           const y = mid + v * mid * 0.9;
           const x = i * step;
           if (i === 0) ctx.moveTo(x, y);

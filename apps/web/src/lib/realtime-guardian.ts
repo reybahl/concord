@@ -14,6 +14,7 @@
  */
 
 import { postGuardianSignal } from "./room-channel";
+import { mightContainClinicalAction } from "./guardian-screen";
 
 const REALTIME_URL = "wss://api.x.ai/v1/realtime";
 const SAMPLE_RATE = 24000;
@@ -50,7 +51,7 @@ export interface GuardianSessionConfig {
    */
   onTranscript?: (role: "room" | "guardian", text: string, final: boolean, key?: string) => void;
   /** Decide what to do with a finalized room utterance. Runs the grounded check. */
-  onRoomUtterance: (text: string) => Promise<UtteranceDecision>;
+  onRoomUtterance: (text: string, turnContext: string) => Promise<UtteranceDecision>;
   onError?: (message: string) => void;
 }
 
@@ -68,13 +69,16 @@ export class GuardianSession {
 
   // Room transcript segmentation. The recognizer streams a growing (and
   // sometimes revised) cumulative transcript per turn. We render one line per
-  // sentence, keyed by index, and update lines in place as they're revised — so
-  // nothing is duplicated and nothing is lost. Each sentence is assessed once.
+  // sentence, keyed by index, and update lines in place as they're revised.
+  // Re-assess when a sentence's text changes and it looks clinically relevant.
   private roomItemId: string | null = null;
   private roomTurnSeq = 0;
   private roomFull = "";
   private roomSentences: string[] = [];
-  private roomAssessedCount = 0;
+  /** Sentence indices that already triggered a clinical assessment this turn. */
+  private roomClinicalDone = new Set<number>();
+  private assessDebounce = new Map<number, ReturnType<typeof setTimeout>>();
+  private assessChain: Promise<void> = Promise.resolve();
   private roomTail = "";
 
   // Speech control: nothing plays unless it belongs to a response we sanctioned.
@@ -103,6 +107,9 @@ export class GuardianSession {
 
   stop(): void {
     this.closed = true;
+    for (const t of this.assessDebounce.values()) clearTimeout(t);
+    this.assessDebounce.clear();
+    this.roomClinicalDone.clear();
     this.processor?.disconnect();
     this.micSource?.disconnect();
     this.micStream?.getTracks().forEach((t) => t.stop());
@@ -334,9 +341,7 @@ export class GuardianSession {
       }
     }
     this.roomSentences = sentences;
-
-    for (let i = this.roomAssessedCount; i < sentences.length; i++) void this.handleRoomUtterance(sentences[i]);
-    this.roomAssessedCount = Math.max(this.roomAssessedCount, sentences.length);
+    this.scheduleAssessments(sentences);
 
     this.roomTail = tail;
     this.config.onTranscript?.("room", tail, false);
@@ -347,22 +352,55 @@ export class GuardianSession {
     const tail = this.roomTail.trim();
     if (tail) {
       this.config.onTranscript?.("room", tail, true, `${this.roomTurnSeq}:${this.roomSentences.length}`);
-      void this.handleRoomUtterance(tail);
+      void this.enqueueAssessment(tail, this.roomFull);
     }
+    for (const t of this.assessDebounce.values()) clearTimeout(t);
+    this.assessDebounce.clear();
     this.roomTurnSeq += 1;
     this.roomItemId = null;
     this.roomFull = "";
     this.roomSentences = [];
-    this.roomAssessedCount = 0;
+    this.roomClinicalDone.clear();
     this.roomTail = "";
     this.config.onTranscript?.("room", "", false);
   }
 
-  private async handleRoomUtterance(text: string): Promise<void> {
+  /**
+   * Debounce per sentence so ASR revisions collapse to one assessment.
+   * Each sentence index is assessed at most once per turn.
+   */
+  private scheduleAssessments(sentences: string[]): void {
+    for (let i = 0; i < sentences.length; i++) {
+      const sentence = sentences[i]?.trim();
+      if (!sentence || this.roomClinicalDone.has(i)) continue;
+
+      const prev = this.assessDebounce.get(i);
+      if (prev) clearTimeout(prev);
+
+      this.assessDebounce.set(
+        i,
+        setTimeout(() => {
+          this.assessDebounce.delete(i);
+          if (this.roomClinicalDone.has(i)) return;
+          const latest = this.roomSentences[i]?.trim();
+          if (!latest) return;
+          if (!mightContainClinicalAction(latest) && !/\bconcord\b/i.test(latest)) return;
+          this.roomClinicalDone.add(i);
+          void this.enqueueAssessment(latest, this.roomFull);
+        }, 900),
+      );
+    }
+  }
+
+  private enqueueAssessment(text: string, turnContext: string): void {
+    this.assessChain = this.assessChain.then(() => this.handleRoomUtterance(text, turnContext));
+  }
+
+  private async handleRoomUtterance(text: string, turnContext: string): Promise<void> {
     this.setStatus("thinking");
     let decision: UtteranceDecision;
     try {
-      decision = await this.config.onRoomUtterance(text);
+      decision = await this.config.onRoomUtterance(text, turnContext);
     } catch (err) {
       this.config.onError?.((err as Error).message);
       decision = { mode: "silent" };

@@ -95,6 +95,9 @@ export function GuardianView({
   const [captureSource, setCaptureSource] = useState<CaptureSource>("mic");
 
   const sessionRef = useRef<GuardianSession | null>(null);
+  const assessedActionsRef = useRef<string[]>([]);
+  const assessedDedupKeysRef = useRef<string[]>([]);
+  const assessChainRef = useRef<Promise<UtteranceDecision>>(Promise.resolve({ mode: "silent" }));
 
   const active = status !== "idle" && status !== "closed" && status !== "error";
 
@@ -102,47 +105,65 @@ export function GuardianView({
     return () => sessionRef.current?.stop();
   }, []);
 
-  const assess = useCallback(async (utterance: string): Promise<UtteranceDecision> => {
-    try {
-      const res = await fetch("/api/guardian/assess", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ utterance }),
-      });
-      const data = (await res.json()) as {
-        answer?: string;
-        clinical?: boolean;
-        verdict?: GuardianVerdict;
-        error?: string;
-      };
-      if (!res.ok) throw new Error(data.error ?? "Assessment failed.");
+  const assess = useCallback(async (utterance: string, turnContext: string): Promise<UtteranceDecision> => {
+    const run = async (): Promise<UtteranceDecision> => {
+      try {
+        const res = await fetch("/api/guardian/assess", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            utterance,
+            turnContext,
+            priorActions: assessedActionsRef.current,
+            priorDedupKeys: assessedDedupKeysRef.current,
+          }),
+        });
+        const data = (await res.json()) as {
+          answer?: string;
+          clinical?: boolean;
+          duplicate?: boolean;
+          dedupKey?: string;
+          verdict?: GuardianVerdict;
+          error?: string;
+        };
+        if (!res.ok) throw new Error(data.error ?? "Assessment failed.");
 
-      // The patient addressed the guardian directly — speak the grounded answer.
-      if (data.answer?.trim()) return { mode: "speak", text: data.answer };
+        if (data.answer?.trim()) return { mode: "speak", text: data.answer };
 
-      // Ordinary conversation — stay silent, don't clutter the log.
-      if (!data.clinical || !data.verdict) return { mode: "silent" };
+        if (data.dedupKey && !assessedDedupKeysRef.current.includes(data.dedupKey)) {
+          assessedDedupKeysRef.current = [...assessedDedupKeysRef.current, data.dedupKey];
+        }
 
-      const verdict = data.verdict;
-      setEvents((prev) => [
-        {
-          id: crypto.randomUUID(),
-          action: verdict.proposedAction || utterance,
-          quote: utterance,
-          status: verdict.conflict ? "flagged" : "clear",
-          verdict,
-        },
-        ...prev,
-      ]);
+        if (data.duplicate || !data.clinical || !data.verdict) return { mode: "silent" };
 
-      if (verdict.conflict && verdict.spokenWarning.trim()) {
-        return { mode: "speak", text: verdict.spokenWarning };
+        const verdict = data.verdict;
+        const action = verdict.proposedAction || utterance;
+        assessedActionsRef.current = [...assessedActionsRef.current, action];
+
+        setEvents((prev) => [
+          {
+            id: crypto.randomUUID(),
+            action,
+            quote: utterance,
+            status: verdict.conflict ? "flagged" : "clear",
+            verdict,
+          },
+          ...prev,
+        ]);
+
+        if (verdict.conflict && verdict.spokenWarning.trim()) {
+          return { mode: "speak", text: verdict.spokenWarning };
+        }
+        return { mode: "silent" };
+      } catch (err) {
+        setError((err as Error).message);
+        return { mode: "silent" };
       }
-      return { mode: "silent" };
-    } catch (err) {
-      setError((err as Error).message);
-      return { mode: "silent" };
-    }
+    };
+
+    const next = assessChainRef.current.then(run);
+    assessChainRef.current = next.then(() => ({ mode: "silent" as const }));
+    return next;
   }, []);
 
   async function startSession() {
@@ -150,6 +171,10 @@ export function GuardianView({
     setStarting(true);
     setError(null);
     setLearned(null);
+    setEvents([]);
+    assessedActionsRef.current = [];
+    assessedDedupKeysRef.current = [];
+    assessChainRef.current = Promise.resolve({ mode: "silent" });
 
     try {
       const res = await fetch("/api/guardian/start", { method: "POST" });
@@ -253,6 +278,7 @@ export function GuardianView({
   }
 
   const flagged = events.filter((e) => e.status === "flagged");
+  const cleared = events.filter((e) => e.status === "clear");
 
   return (
     <div className="space-y-6">
@@ -264,8 +290,7 @@ export function GuardianView({
           <CardDescription className="max-w-2xl text-[13px] leading-6">
             A point-of-care safety layer for {record.patient.name}. It stays silent, listens to the room,
             and interrupts only when a proposed medication or order conflicts with the reconciled,
-            cross-provider record. Open the simulated room in another tab to hear a doctor and patient
-            talk it through while the Guardian listens.
+            cross-provider record. Open the simulated room in another tab, or use your mic in a real visit.
           </CardDescription>
         </CardHeader>
         <CardContent className="flex flex-wrap items-center gap-3">
@@ -315,6 +340,7 @@ export function GuardianView({
       <div className="grid gap-6 lg:grid-cols-[1.3fr_1fr]">
         <div className="space-y-4">
           {flagged.map((e) => e.verdict && <CatchCard key={e.id} verdict={e.verdict} record={record} />)}
+          {cleared.map((e) => e.verdict && <ClearCard key={e.id} verdict={e.verdict} />)}
 
           <Card>
             <CardHeader>
@@ -352,6 +378,30 @@ function StatusPill({ status }: { status: GuardianStatus }) {
       <Icon className={`size-3.5 ${status === "thinking" ? "animate-spin" : ""}`} />
       {STATUS_LABEL[status]}
     </Badge>
+  );
+}
+
+function ClearCard({ verdict }: { verdict: GuardianVerdict }) {
+  return (
+    <Card className="border-2 border-emerald-500/30">
+      <CardHeader>
+        <div className="flex items-start justify-between gap-3">
+          <CardTitle className="flex items-center gap-2 text-base">
+            <CheckCircle2 className="size-5 text-emerald-300" />
+            Checked — no conflict
+          </CardTitle>
+          <Badge variant="outline" className={SEV.none.cls}>
+            {SEV.none.label}
+          </Badge>
+        </div>
+        <CardDescription className="text-[13px] leading-6 text-foreground">
+          Proposed: <span className="font-medium">{verdict.proposedAction}</span>
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        <p className="text-sm leading-relaxed text-muted-foreground">{verdict.rationale}</p>
+      </CardContent>
+    </Card>
   );
 }
 

@@ -2,10 +2,14 @@ import { isStorageConfigured } from "@/lib/documents";
 import { apiError, apiOk } from "@/lib/api";
 import {
   answerFromRecord,
+  actionDedupKey,
+  assessmentLabel,
   checkClinicalAction,
   classifyUtterance,
   GUARDIAN_NAME_PATTERN,
+  isDuplicateAssessment,
 } from "@/lib/guardian";
+import { mightContainClinicalAction } from "@/lib/guardian-screen";
 import { getLatestRecordForSession } from "@/lib/reconciled-records";
 import { getOrCreateSessionId, getSessionId } from "@/lib/session";
 import { hasVoice } from "@/lib/voice";
@@ -28,7 +32,7 @@ export async function POST(req: Request) {
   if (!hasVoice()) return apiError("Voice is not configured (XAI_API_KEY required).", 503);
   if (!isStorageConfigured()) return apiError("Storage is not configured.", 503);
 
-  let body: { utterance?: string } | null;
+  let body: { utterance?: string; turnContext?: string; priorActions?: string[]; priorDedupKeys?: string[] } | null;
   try {
     body = (await req.json()) as typeof body;
   } catch {
@@ -37,6 +41,9 @@ export async function POST(req: Request) {
 
   const utterance = body?.utterance?.trim();
   if (!utterance) return apiError("Missing utterance.");
+  const turnContext = body?.turnContext?.trim() || utterance;
+  const priorActions = (body?.priorActions ?? []).map((a) => a.trim()).filter(Boolean);
+  const priorDedupKeys = (body?.priorDedupKeys ?? []).map((k) => k.trim().toLowerCase()).filter(Boolean);
 
   try {
     if (GUARDIAN_NAME_PATTERN.test(utterance)) {
@@ -46,9 +53,21 @@ export async function POST(req: Request) {
       return apiOk({ answer });
     }
 
+    if (!mightContainClinicalAction(utterance)) {
+      return apiOk({ clinical: false });
+    }
+
     const classification = await classifyUtterance(utterance);
     if (!classification.contains_clinical_action || !classification.action) {
       return apiOk({ clinical: false });
+    }
+
+    const label = assessmentLabel(classification);
+    if (!label) return apiOk({ clinical: false });
+
+    const dedupKey = actionDedupKey(classification);
+    if (await isDuplicateAssessment(label, priorActions, dedupKey, priorDedupKeys)) {
+      return apiOk({ clinical: false, duplicate: true, dedupKey });
     }
 
     const saved = await loadRecord();
@@ -58,9 +77,11 @@ export async function POST(req: Request) {
       saved.record,
       classification.action,
       classification.kind ?? "other",
+      label,
       utterance,
+      turnContext,
     );
-    return apiOk({ clinical: true, verdict });
+    return apiOk({ clinical: true, verdict, dedupKey });
   } catch (err) {
     return apiError((err as Error).message, 500);
   }
