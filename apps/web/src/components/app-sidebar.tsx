@@ -58,7 +58,7 @@ export function AppSidebar({
             ◇
           </div>
           <div className="min-w-0 leading-none group-data-[collapsible=icon]:hidden">
-            <div className="truncate text-sm font-semibold leading-tight">Concord</div>
+            <div className="truncate text-sm font-medium leading-tight">Concord</div>
             <div className="truncate text-xs text-muted-foreground leading-tight">
               Health reconciliation
             </div>

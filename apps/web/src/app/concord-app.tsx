@@ -25,6 +25,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   Card,
+  CardAction,
   CardContent,
   CardDescription,
   CardHeader,
@@ -380,7 +381,7 @@ export function ConcordApp() {
           <SidebarTrigger className="shrink-0" />
           <Separator orientation="vertical" className="h-4 shrink-0" />
           <div className="flex min-w-0 flex-1 flex-col justify-center gap-0.5 leading-none">
-            <h1 className="truncate text-sm font-semibold leading-tight">{pageTitle}</h1>
+            <h1 className="truncate text-sm font-medium leading-tight">{pageTitle}</h1>
             <p className="truncate text-xs text-muted-foreground leading-tight">{pageDescription}</p>
           </div>
           <StatusBadge status={status} hasRecord={Boolean(record)} stale={recordStale} />
@@ -555,13 +556,10 @@ function OverviewView({
     <div className="space-y-6">
       <Card>
         <CardHeader>
-          <CardDescription className="text-xs uppercase tracking-wide">
-            Powered by Grok · FHIR-native · grounded
-          </CardDescription>
-          <CardTitle className="text-2xl font-semibold tracking-tight sm:text-3xl">
+          <CardTitle className="text-lg font-medium tracking-tight">
             {record?.patient.name ?? "Your health record"}
           </CardTitle>
-          <CardDescription className="max-w-2xl text-base">
+          <CardDescription className="max-w-2xl text-[13px] leading-6">
             Upload records from every provider. Concord assembles one grounded picture and flags
             dangerous oversights no single doctor could see.
           </CardDescription>
@@ -615,11 +613,13 @@ function OverviewView({
 
       {topFindings.length > 0 ? (
         <Card>
-          <CardHeader className="flex-row items-center justify-between space-y-0">
+          <CardHeader>
             <CardTitle className="text-base">Top findings</CardTitle>
-            <Button variant="ghost" size="sm" onClick={() => onNavigate("findings")}>
-              View all
-            </Button>
+            <CardAction>
+              <Button variant="ghost" size="sm" onClick={() => onNavigate("findings")}>
+                View all
+              </Button>
+            </CardAction>
           </CardHeader>
           <CardContent className="space-y-3">
             {topFindings.map((insight) => (
@@ -659,7 +659,7 @@ function StatCard({
     <Card className={highlight ? "border-red-500/30" : undefined}>
       <CardHeader className="pb-2">
         <CardDescription>{label}</CardDescription>
-        <CardTitle className="text-3xl tabular-nums">{value}</CardTitle>
+        <CardTitle className="text-3xl font-medium tabular-nums tracking-tight">{value}</CardTitle>
       </CardHeader>
     </Card>
   );
