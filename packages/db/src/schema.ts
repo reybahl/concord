@@ -33,12 +33,20 @@ export const sourceDocuments = pgTable("source_documents", {
  * A saved, patient-owned reconciled health record. The full reconciled
  * structure (facts, provenance, insights, sources) is stored as JSON so the
  * pipeline can evolve without migrations during the hackathon.
+ *
+ * One row per anonymous session (until auth lands and we key by userId instead).
+ * `sourceDocumentIds` is the snapshot of uploads used for this reconcile — the
+ * UI compares it to the live upload list to show a stale banner.
  */
 export const records = pgTable("records", {
   id: uuid("id").defaultRandom().primaryKey(),
+  sessionId: text("session_id").notNull().unique(),
   userId: uuid("user_id").references(() => users.id),
   title: text("title").notNull(),
+  /** Which uploaded documents were included in this reconciliation. */
+  sourceDocumentIds: text("source_document_ids").array().notNull(),
   reconciled: jsonb("reconciled").notNull(),
+  reconciledAt: timestamp("reconciled_at").defaultNow().notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 

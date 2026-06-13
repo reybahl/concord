@@ -1,6 +1,7 @@
 import { isStorageConfigured, loadSourceDocumentsForSession } from "@/lib/documents";
 import { apiError } from "@/lib/api";
 import { runPipeline } from "@/lib/pipeline";
+import { saveRecordForSession } from "@/lib/reconciled-records";
 import { getOrCreateSessionId } from "@/lib/session";
 
 export const runtime = "nodejs";
@@ -29,12 +30,28 @@ export async function POST(req: Request) {
     return apiError((err as Error).message, 400);
   }
 
+  const sourceDocumentIds = sources.map((s) => s.id);
   const encoder = new TextEncoder();
 
   const stream = new ReadableStream<Uint8Array>({
     async start(controller) {
       try {
         for await (const event of runPipeline(sources)) {
+          if (event.type === "result") {
+            try {
+              await saveRecordForSession(sessionId, sourceDocumentIds, event.record);
+            } catch (saveErr) {
+              controller.enqueue(
+                encoder.encode(
+                  `${JSON.stringify({
+                    type: "error",
+                    message: `Reconciliation succeeded but failed to save: ${(saveErr as Error).message}`,
+                  })}\n`,
+                ),
+              );
+              return;
+            }
+          }
           controller.enqueue(encoder.encode(`${JSON.stringify(event)}\n`));
         }
       } catch (err) {

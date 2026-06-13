@@ -43,6 +43,14 @@ interface UploadedDocument {
   createdAt: string;
 }
 
+interface SavedRecordMeta {
+  id: string;
+  title: string;
+  record: HealthRecord;
+  sourceDocumentIds: string[];
+  reconciledAt: string;
+}
+
 interface LiveNote {
   text: string;
   tone?: "info" | "merge" | "flag" | "model";
@@ -67,16 +75,57 @@ function formatBytes(bytes: number) {
   return `${(bytes / 1024).toFixed(1)} KB`;
 }
 
+function documentSetsMatch(savedIds: string[], currentIds: string[]): boolean {
+  if (savedIds.length !== currentIds.length) return false;
+  const a = [...savedIds].sort();
+  const b = [...currentIds].sort();
+  return a.every((id, i) => id === b[i]);
+}
+
+function describeStaleChange(savedIds: string[], currentIds: string[]): string {
+  const saved = new Set(savedIds);
+  const current = new Set(currentIds);
+  const added = currentIds.filter((id) => !saved.has(id)).length;
+  const removed = savedIds.filter((id) => !current.has(id)).length;
+  if (added && removed) {
+    return `${added} new and ${removed} removed — your saved record may be outdated. Reconcile to update.`;
+  }
+  if (added) {
+    return `${added} new document${added === 1 ? "" : "s"} since last reconcile — run again to update your record.`;
+  }
+  if (removed) {
+    return `${removed} document${removed === 1 ? "" : "s"} removed — run again to update your record.`;
+  }
+  return "Uploads changed — run again to update your saved record.";
+}
+
 export function ConcordApp() {
   const [status, setStatus] = useState<Status>("idle");
   const [stages, setStages] = useState<LiveStage[]>([]);
   const [record, setRecord] = useState<HealthRecord | null>(null);
+  const [savedSourceDocumentIds, setSavedSourceDocumentIds] = useState<string[]>([]);
+  const [reconciledAt, setReconciledAt] = useState<string | null>(null);
   const [documents, setDocuments] = useState<UploadedDocument[]>([]);
   const [loadingDocs, setLoadingDocs] = useState(true);
   const [uploading, setUploading] = useState(false);
   const [storageError, setStorageError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const refreshSavedRecord = useCallback(async () => {
+    const res = await fetch("/api/record");
+    const data = (await res.json()) as {
+      configured?: boolean;
+      saved?: SavedRecordMeta | null;
+    };
+
+    if (!res.ok || !data.saved) return;
+
+    setRecord(data.saved.record);
+    setSavedSourceDocumentIds(data.saved.sourceDocumentIds);
+    setReconciledAt(data.saved.reconciledAt);
+    setStatus("done");
+  }, []);
 
   const refreshDocuments = useCallback(async () => {
     setLoadingDocs(true);
@@ -107,10 +156,10 @@ export function ConcordApp() {
   }, []);
 
   useEffect(() => {
-    // Standard fetch-on-mount: load the session's uploaded documents once.
+    // Standard fetch-on-mount: load uploads and any saved reconciliation.
     // eslint-disable-next-line react-hooks/set-state-in-effect
-    void refreshDocuments();
-  }, [refreshDocuments]);
+    void Promise.all([refreshDocuments(), refreshSavedRecord()]);
+  }, [refreshDocuments, refreshSavedRecord]);
 
   async function uploadFiles(files: FileList | File[]) {
     if (storageError) return;
@@ -189,7 +238,18 @@ export function ConcordApp() {
       }
     }
     setStatus("done");
+    setSavedSourceDocumentIds(documents.map((d) => d.id));
+    setReconciledAt(new Date().toISOString());
   }
+
+  const currentDocumentIds = documents.map((d) => d.id);
+  const recordStale =
+    record !== null &&
+    savedSourceDocumentIds.length > 0 &&
+    !documentSetsMatch(savedSourceDocumentIds, currentDocumentIds);
+  const staleMessage = recordStale
+    ? describeStaleChange(savedSourceDocumentIds, currentDocumentIds)
+    : null;
 
   function applyStage(event: StageEvent) {
     setStages((prev) => {
@@ -236,7 +296,7 @@ export function ConcordApp() {
 
   return (
     <div className="mx-auto w-full max-w-6xl px-5 py-10">
-      <Header status={status} />
+      <Header status={status} hasRecord={Boolean(record)} stale={recordStale} />
 
       {storageError && (
         <div className="mt-6 rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-100">
@@ -252,7 +312,18 @@ export function ConcordApp() {
         </div>
       )}
 
-      <Hero status={status} onRun={run} canReconcile={canReconcile} documentCount={documents.length} />
+      <Hero
+        status={status}
+        onRun={run}
+        canReconcile={canReconcile}
+        documentCount={documents.length}
+        stale={recordStale}
+        hasRecord={Boolean(record)}
+      />
+
+      {recordStale && staleMessage && (
+        <StaleBanner message={staleMessage} onReconcile={run} canReconcile={canReconcile} />
+      )}
 
       <div className="mt-10 grid gap-6 lg:grid-cols-[minmax(0,320px)_minmax(0,1fr)]">
         <UploadPanel
@@ -266,8 +337,15 @@ export function ConcordApp() {
           onRemove={(id) => void removeDocument(id)}
         />
         <main className="min-w-0 space-y-6">
-          {status !== "idle" && <Pipeline stages={stages} />}
-          {record && <Results record={record} onExport={downloadFhir} />}
+          {status === "running" && <Pipeline stages={stages} />}
+          {record && status !== "running" && (
+            <Results
+              record={record}
+              stale={recordStale}
+              reconciledAt={reconciledAt}
+              onExport={downloadFhir}
+            />
+          )}
           {status === "idle" && !record && (
             <IdleHint documentCount={documents.length} hasStorage={!storageError} />
           )}
@@ -275,13 +353,30 @@ export function ConcordApp() {
       </div>
 
       <footer className="mt-16 border-t border-white/5 pt-6 text-center text-xs text-slate-500">
-        Concord · uploads in Vercel Blob · metadata in Postgres · grounded reconciliation
+        Concord · uploads in Vercel Blob · reconciliation persisted in Postgres · grounded
       </footer>
     </div>
   );
 }
 
-function Header({ status }: { status: Status }) {
+function Header({
+  status,
+  hasRecord,
+  stale,
+}: {
+  status: Status;
+  hasRecord: boolean;
+  stale: boolean;
+}) {
+  const badge =
+    status === "running"
+      ? { label: "Reconciling…", className: "border-sky-500/40 bg-sky-500/10 text-sky-300" }
+      : stale
+        ? { label: "Outdated", className: "border-amber-500/40 bg-amber-500/10 text-amber-300" }
+        : hasRecord
+          ? { label: "Reconciled", className: "border-emerald-500/40 bg-emerald-500/10 text-emerald-300" }
+          : { label: "Ready", className: "border-white/10 bg-white/5 text-slate-400" };
+
   return (
     <header className="flex items-center justify-between">
       <div className="flex items-center gap-2.5">
@@ -293,18 +388,34 @@ function Header({ status }: { status: Status }) {
           <div className="text-xs text-slate-400">Patient-owned health reconciliation</div>
         </div>
       </div>
-      <span
-        className={`rounded-full border px-3 py-1 text-xs ${
-          status === "done"
-            ? "border-emerald-500/40 bg-emerald-500/10 text-emerald-300"
-            : status === "running"
-              ? "border-sky-500/40 bg-sky-500/10 text-sky-300"
-              : "border-white/10 bg-white/5 text-slate-400"
-        }`}
-      >
-        {status === "done" ? "Reconciled" : status === "running" ? "Reconciling…" : "Ready"}
-      </span>
+      <span className={`rounded-full border px-3 py-1 text-xs ${badge.className}`}>{badge.label}</span>
     </header>
+  );
+}
+
+function StaleBanner({
+  message,
+  onReconcile,
+  canReconcile,
+}: {
+  message: string;
+  onReconcile: () => void;
+  canReconcile: boolean;
+}) {
+  return (
+    <div className="mt-6 flex flex-col gap-3 rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+      <div className="flex items-start gap-2 text-sm text-amber-100">
+        <AlertTriangle className="mt-0.5 size-4 shrink-0 text-amber-300" />
+        <span>{message}</span>
+      </div>
+      <button
+        onClick={onReconcile}
+        disabled={!canReconcile}
+        className="shrink-0 rounded-lg border border-amber-400/40 bg-amber-400/10 px-3 py-1.5 text-xs font-medium text-amber-100 transition hover:bg-amber-400/20 disabled:cursor-not-allowed disabled:opacity-50"
+      >
+        Update reconciliation
+      </button>
+    </div>
   );
 }
 
@@ -313,12 +424,27 @@ function Hero({
   onRun,
   canReconcile,
   documentCount,
+  stale,
+  hasRecord,
 }: {
   status: Status;
   onRun: () => void;
   canReconcile: boolean;
   documentCount: number;
+  stale: boolean;
+  hasRecord: boolean;
 }) {
+  const buttonLabel =
+    status === "running"
+      ? "Reconciling…"
+      : documentCount === 0
+        ? "Upload records to reconcile"
+        : stale
+          ? "Update reconciliation"
+          : hasRecord
+            ? "Run again"
+            : `Reconcile ${documentCount} record${documentCount === 1 ? "" : "s"}`;
+
   return (
     <section className="mt-10 max-w-3xl">
       <div className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs text-slate-300">
@@ -344,13 +470,7 @@ function Hero({
         ) : (
           <Activity className="size-4" />
         )}
-        {status === "running"
-          ? "Reconciling…"
-          : documentCount === 0
-            ? "Upload records to reconcile"
-            : status === "idle"
-              ? `Reconcile ${documentCount} record${documentCount === 1 ? "" : "s"}`
-              : "Run again"}
+        {buttonLabel}
       </button>
     </section>
   );
@@ -528,14 +648,41 @@ function Pipeline({ stages }: { stages: LiveStage[] }) {
   );
 }
 
-function Results({ record, onExport }: { record: HealthRecord; onExport: () => void }) {
+function Results({
+  record,
+  stale,
+  reconciledAt,
+  onExport,
+}: {
+  record: HealthRecord;
+  stale: boolean;
+  reconciledAt: string | null;
+  onExport: () => void;
+}) {
   const sorted = [...record.insights].sort((a, b) => {
     const rank = { high: 0, medium: 1, low: 2 };
     return rank[a.severity] - rank[b.severity];
   });
 
+  const savedLabel = reconciledAt
+    ? `Saved ${new Date(reconciledAt).toLocaleString(undefined, {
+        dateStyle: "medium",
+        timeStyle: "short",
+      })}`
+    : null;
+
   return (
-    <div className="space-y-6">
+    <div className={`space-y-6 ${stale ? "opacity-80" : ""}`}>
+      {(savedLabel || stale) && (
+        <div className="flex flex-wrap items-center gap-2 text-xs text-slate-400">
+          {savedLabel && <span>{savedLabel}</span>}
+          {stale && (
+            <span className="rounded-full border border-amber-500/30 bg-amber-500/10 px-2 py-0.5 text-amber-200">
+              May be outdated
+            </span>
+          )}
+        </div>
+      )}
       <section>
         <div className="mb-3 flex items-center justify-between">
           <h2 className="flex items-center gap-2 text-sm font-medium text-slate-300">
