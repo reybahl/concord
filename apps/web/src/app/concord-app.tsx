@@ -21,6 +21,7 @@ import {
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { AppSidebar, type DashboardView } from "@/components/app-sidebar";
+import { GuardianView } from "@/components/guardian-view";
 import { ProvenanceChips } from "@/components/provenance-chips";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
@@ -373,6 +374,10 @@ export function ConcordApp() {
       title: "Health record",
       description: "Medications, labs, conditions, and allergies — coded and grounded.",
     },
+    guardian: {
+      title: "Guardian",
+      description: "Live point-of-care safety — your record speaks up when a decision is unsafe.",
+    },
   };
 
   const { title: pageTitle, description: pageDescription } = pageTitles[activeView];
@@ -465,6 +470,14 @@ export function ConcordApp() {
 
           {activeView === "record" && (
             <RecordView record={record} stale={recordStale} onExport={downloadFhir} />
+          )}
+
+          {activeView === "guardian" && (
+            <GuardianView
+              record={record}
+              onLearned={() => void refreshDocuments()}
+              onGoToUpload={() => setActiveView("upload")}
+            />
           )}
         </div>
       </SidebarInset>

@@ -4,6 +4,7 @@ import {
   Activity,
   LayoutDashboard,
   ShieldAlert,
+  ShieldCheck,
   Stethoscope,
   Upload,
 } from "lucide-react";
@@ -23,7 +24,7 @@ import {
   SidebarRail,
 } from "@/components/ui/sidebar";
 
-export type DashboardView = "overview" | "upload" | "findings" | "record";
+export type DashboardView = "overview" | "upload" | "findings" | "record" | "guardian";
 
 const NAV: {
   id: DashboardView;
@@ -34,6 +35,7 @@ const NAV: {
   { id: "upload", title: "Upload & reconcile", icon: Upload },
   { id: "findings", title: "Findings", icon: ShieldAlert },
   { id: "record", title: "Health record", icon: Stethoscope },
+  { id: "guardian", title: "Guardian", icon: ShieldCheck },
 ];
 
 export function AppSidebar({

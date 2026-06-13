@@ -92,18 +92,45 @@ export async function uploadDocument(
   system?: string | null,
 ): Promise<UploadedDocumentDto> {
   assertAllowedUpload(file);
+  return persistDocument(sessionId, {
+    filename: file.name,
+    buffer: Buffer.from(await file.arrayBuffer()),
+    mimeType: resolveMimeType(file.name, file.type),
+    sizeBytes: file.size,
+    system,
+  });
+}
 
+/** Persist a generated text document (e.g. a captured Guardian visit) as a source. */
+export async function uploadTextDocument(
+  sessionId: string,
+  filename: string,
+  text: string,
+  system?: string | null,
+): Promise<UploadedDocumentDto> {
+  const buffer = Buffer.from(text, "utf-8");
+  if (buffer.byteLength === 0) throw new Error("Cannot save an empty document.");
+  return persistDocument(sessionId, {
+    filename,
+    buffer,
+    mimeType: "text/plain",
+    sizeBytes: buffer.byteLength,
+    system,
+  });
+}
+
+async function persistDocument(
+  sessionId: string,
+  doc: { filename: string; buffer: Buffer; mimeType: string; sizeBytes: number; system?: string | null },
+): Promise<UploadedDocumentDto> {
   const existing = await listUploadedDocuments(sessionId);
   if (existing.length >= MAX_FILES_PER_SESSION) {
     throw new Error(`Maximum ${MAX_FILES_PER_SESSION} files per session.`);
   }
 
   const documentId = crypto.randomUUID();
-  const buffer = Buffer.from(await file.arrayBuffer());
-  const pathname = buildBlobPathname(sessionId, documentId, file.name);
-  const mimeType = resolveMimeType(file.name, file.type);
-
-  const blobUrl = await putBlob(pathname, buffer, mimeType);
+  const pathname = buildBlobPathname(sessionId, documentId, doc.filename);
+  const blobUrl = await putBlob(pathname, doc.buffer, doc.mimeType);
 
   try {
     const [row] = await requireDb()
@@ -111,11 +138,11 @@ export async function uploadDocument(
       .values({
         id: documentId,
         sessionId,
-        filename: file.name,
-        label: labelFromFilename(file.name),
-        system: system?.trim() || null,
-        mimeType,
-        sizeBytes: file.size,
+        filename: doc.filename,
+        label: labelFromFilename(doc.filename),
+        system: doc.system?.trim() || null,
+        mimeType: doc.mimeType,
+        sizeBytes: doc.sizeBytes,
         blobUrl,
       })
       .returning();
