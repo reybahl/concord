@@ -5,7 +5,6 @@ import {
   AlertTriangle,
   ArrowDownRight,
   ArrowUpRight,
-  CheckCircle2,
   Download,
   ExternalLink,
   FileText,
@@ -50,7 +49,9 @@ import {
 } from "@/components/ui/sidebar";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
-import { foldPipelineEvents } from "@/lib/pipeline-log";
+import { PipelinePanel } from "@/components/pipeline-panel";
+import { WorkflowOverview } from "@/components/workflow-overview";
+import { foldPipelineEvents, type PipelineStageSnapshot } from "@/lib/pipeline-log";
 import { toFhirBundle } from "@/lib/fhir";
 import type {
   HealthRecord,
@@ -92,13 +93,7 @@ interface LiveNote {
   slot?: string;
 }
 
-interface LiveStage {
-  stage: string;
-  label: string;
-  status: "start" | "done";
-  detail?: string;
-  notes: LiveNote[];
-}
+type LiveStage = PipelineStageSnapshot;
 
 const SEVERITY: Record<Severity, { ring: string; text: string; bg: string; label: string }> = {
   high: { ring: "border-red-500/50", text: "text-red-300", bg: "bg-red-500/10", label: "High" },
@@ -279,7 +274,6 @@ export function ConcordApp() {
       }
     }
     setStatus("done");
-    setActiveView("overview");
     setSavedSourceDocumentIds(documents.map((d) => d.id));
     setReconciledAt(new Date().toISOString());
   }
@@ -429,6 +423,7 @@ export function ConcordApp() {
               record={record}
               documents={documents}
               status={status}
+              stages={stages}
               stale={recordStale}
               reconciledAt={reconciledAt}
               canReconcile={canReconcile}
@@ -543,6 +538,7 @@ function OverviewView({
   record,
   documents,
   status,
+  stages,
   stale,
   reconciledAt,
   canReconcile,
@@ -552,6 +548,7 @@ function OverviewView({
   record: HealthRecord | null;
   documents: UploadedDocument[];
   status: Status;
+  stages: LiveStage[];
   stale: boolean;
   reconciledAt: string | null;
   canReconcile: boolean;
@@ -627,6 +624,19 @@ function OverviewView({
         <p className="text-xs text-muted-foreground">
           Last reconciled {reconciledLabel}
         </p>
+      )}
+
+      {stages.length > 0 || documents.length > 0 ? (
+        <WorkflowOverview
+          documentCount={documents.length}
+          pipelineRunning={status === "running"}
+          stages={stages}
+          compact
+        />
+      ) : null}
+
+      {stages.length > 0 && (
+        <PipelinePanel stages={stages} completedAt={reconciledAt} />
       )}
 
       {topFindings.length > 0 ? (
@@ -762,11 +772,13 @@ function UploadView({
           onRemove={onRemove}
         />
         <div className="min-w-0 space-y-6">
+          <WorkflowOverview
+            documentCount={documents.length}
+            pipelineRunning={status === "running"}
+            stages={stages}
+          />
           {(status === "running" || (status === "done" && stages.length > 0)) && (
-            <Pipeline stages={stages} completedAt={reconciledAt} />
-          )}
-          {status === "idle" && !record && stages.length === 0 && (
-            <IdleHint documentCount={documents.length} hasStorage={!storageError} />
+            <PipelinePanel stages={stages} completedAt={reconciledAt} />
           )}
         </div>
       </div>
@@ -1086,95 +1098,6 @@ function DocumentListItem({
         </SheetContent>
       </Sheet>
     </>
-  );
-}
-
-function IdleHint({
-  documentCount,
-  hasStorage,
-}: {
-  documentCount: number;
-  hasStorage: boolean;
-}) {
-  return (
-    <Card>
-      <CardContent className="flex flex-col items-center py-10 text-center">
-        <Stethoscope className="size-8 text-muted-foreground" />
-        <p className="mx-auto mt-3 max-w-sm text-sm text-muted-foreground">
-          {documentCount === 0
-            ? hasStorage
-              ? "Upload your medical records, then press Reconcile."
-              : "Configure Postgres + Vercel Blob to enable uploads."
-            : "Press Reconcile to watch Concord read your uploads, normalize them to standard codes, ground every fact to its source, and run a cross-provider safety check."}
-        </p>
-      </CardContent>
-    </Card>
-  );
-}
-
-const NOTE_TONE: Record<NonNullable<LiveNote["tone"]>, string> = {
-  info: "text-muted-foreground border-border",
-  model: "text-muted-foreground border-border",
-  merge: "text-muted-foreground border-border",
-  flag: "text-amber-300 border-amber-500/40",
-};
-
-function Pipeline({
-  stages,
-  completedAt,
-}: {
-  stages: LiveStage[];
-  completedAt?: string | null;
-}) {
-  const completedLabel = completedAt
-    ? new Date(completedAt).toLocaleString(undefined, {
-        dateStyle: "medium",
-        timeStyle: "short",
-      })
-    : null;
-
-  return (
-    <Card>
-      <CardHeader className="flex-row items-center justify-between space-y-0">
-        <CardTitle className="text-base">Reconciliation pipeline</CardTitle>
-        {completedLabel && (
-          <span className="text-xs text-muted-foreground">Completed {completedLabel}</span>
-        )}
-      </CardHeader>
-      <CardContent>
-        <ol className="space-y-3">
-          {stages.map((s) => (
-            <li key={s.stage} className="flex items-start gap-3">
-              <span className="mt-0.5">
-                {s.status === "done" ? (
-                  <CheckCircle2 className="size-5 text-muted-foreground" />
-                ) : (
-                  <Loader2 className="size-5 animate-spin text-muted-foreground" />
-                )}
-              </span>
-              <div className="min-w-0 flex-1">
-                <div className={`text-sm ${s.status === "done" ? "text-muted-foreground" : ""}`}>
-                  {s.label}
-                </div>
-                {s.detail && <div className="text-xs text-muted-foreground">{s.detail}</div>}
-                {s.notes.length > 0 && (
-                  <ul className="mt-1.5 space-y-1">
-                    {s.notes.map((n, i) => (
-                      <li
-                        key={n.slot ?? i}
-                        className={`border-l-2 pl-2 text-xs leading-relaxed ${NOTE_TONE[n.tone ?? "info"]}`}
-                      >
-                        {n.text}
-                      </li>
-                    ))}
-                  </ul>
-                )}
-              </div>
-            </li>
-          ))}
-        </ol>
-      </CardContent>
-    </Card>
   );
 }
 

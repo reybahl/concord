@@ -107,6 +107,39 @@ async function* runLive(docs: SourceDoc[]): AsyncGenerator<PipelineEvent> {
     }
   }
   if (!reconciled) throw new Error("Reconciliation produced no result.");
+
+  for (const med of reconciled.medications) {
+    if (med.aliases.length <= 1) continue;
+    yield {
+      type: "note",
+      stage: "reconcile",
+      tone: "merge",
+      text: `${med.display} ← merged ${med.aliases.map((a) => `"${a}"`).join(", ")}${med.reviewNeeded ? " · clinician review suggested" : ""}`,
+      slot: `alias-${med.display}`,
+    };
+  }
+  for (const lab of reconciled.labs) {
+    const converted = lab.series.filter((p) => p.reported?.trim());
+    if (converted.length === 0) continue;
+    yield {
+      type: "note",
+      stage: "reconcile",
+      tone: "merge",
+      text: `${lab.display}: unit normalization (${converted.map((p) => p.reported).join("; ")})`,
+      slot: `lab-unit-${lab.display}`,
+    };
+  }
+  for (const cond of reconciled.conditions) {
+    if (!cond.inferred) continue;
+    yield {
+      type: "note",
+      stage: "reconcile",
+      tone: "model",
+      text: `Inferred ${cond.display}${cond.note ? ` — ${cond.note}` : ""}`,
+      slot: `inferred-${cond.display}`,
+    };
+  }
+
   const record = toHealthRecord(reconciled, docs, labelOf);
   yield {
     type: "stage",
