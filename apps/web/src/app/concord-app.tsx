@@ -7,6 +7,7 @@ import {
   ArrowUpRight,
   CheckCircle2,
   Download,
+  ExternalLink,
   FileText,
   FlaskConical,
   Layers,
@@ -32,6 +33,14 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
+import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetFooter,
+  SheetHeader,
+  SheetTitle,
+} from "@/components/ui/sheet";
 import {
   SidebarInset,
   SidebarProvider,
@@ -927,31 +936,135 @@ function UploadPanel({
           </p>
         ) : (
           documents.map((doc) => (
-            <div
+            <DocumentListItem
               key={doc.id}
-              className="flex items-start gap-2 border bg-muted/20 p-3"
-            >
-              <FileText className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
-              <div className="min-w-0 flex-1">
-                <div className="truncate text-sm font-medium">{doc.label}</div>
-                <div className="truncate text-xs text-muted-foreground">{doc.filename}</div>
-                <div className="mt-0.5 text-xs text-muted-foreground">{formatBytes(doc.sizeBytes)}</div>
-              </div>
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon-sm"
-                onClick={() => onRemove(doc.id)}
-                disabled={disabled || uploading}
-                aria-label={`Remove ${doc.filename}`}
-              >
-                <Trash2 className="size-3.5" />
-              </Button>
-            </div>
+              doc={doc}
+              disabled={disabled}
+              uploading={uploading}
+              onRemove={onRemove}
+            />
           ))
         )}
       </CardContent>
     </Card>
+  );
+}
+
+function documentViewUrl(documentId: string) {
+  return `/api/documents/${documentId}?inline=1`;
+}
+
+function DocumentListItem({
+  doc,
+  disabled,
+  uploading,
+  onRemove,
+}: {
+  doc: UploadedDocument;
+  disabled: boolean;
+  uploading: boolean;
+  onRemove: (id: string) => void;
+}) {
+  const [previewOpen, setPreviewOpen] = useState(false);
+  const [previewText, setPreviewText] = useState<string | null>(null);
+  const [previewError, setPreviewError] = useState<string | null>(null);
+  const [loadingPreview, setLoadingPreview] = useState(false);
+
+  async function loadPreview() {
+    setPreviewOpen(true);
+    if (loadingPreview) return;
+    if (previewText !== null && !previewError) return;
+
+    setLoadingPreview(true);
+    setPreviewError(null);
+
+    try {
+      const res = await fetch(`/api/documents/${doc.id}`);
+      const data = (await res.json()) as { text?: string; error?: string };
+      if (!res.ok) throw new Error(data.error ?? "Failed to load document.");
+      setPreviewText(data.text ?? "");
+    } catch (err) {
+      setPreviewError((err as Error).message);
+    } finally {
+      setLoadingPreview(false);
+    }
+  }
+
+  function openInNewTab() {
+    window.open(documentViewUrl(doc.id), "_blank", "noopener,noreferrer");
+  }
+
+  return (
+    <>
+      <div className="flex items-start gap-1 border bg-muted/20">
+        <button
+          type="button"
+          onClick={() => void loadPreview()}
+          disabled={disabled}
+          className="flex min-w-0 flex-1 items-start gap-2 p-3 text-left transition hover:bg-muted/40 disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          <FileText className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
+          <div className="min-w-0 flex-1">
+            <div className="truncate text-sm font-medium">{doc.label}</div>
+            <div className="truncate text-xs text-muted-foreground">{doc.filename}</div>
+            <div className="mt-0.5 text-xs text-muted-foreground">{formatBytes(doc.sizeBytes)}</div>
+          </div>
+        </button>
+        <div className="flex shrink-0 flex-col border-l">
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon-sm"
+            className="size-8 rounded-none"
+            onClick={openInNewTab}
+            disabled={disabled}
+            aria-label={`Open ${doc.filename} in new tab`}
+          >
+            <ExternalLink className="size-3.5" />
+          </Button>
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon-sm"
+            className="size-8 rounded-none border-t"
+            onClick={() => onRemove(doc.id)}
+            disabled={disabled || uploading}
+            aria-label={`Remove ${doc.filename}`}
+          >
+            <Trash2 className="size-3.5" />
+          </Button>
+        </div>
+      </div>
+
+      <Sheet open={previewOpen} onOpenChange={setPreviewOpen}>
+        <SheetContent side="right" className="flex h-full w-full flex-col sm:max-w-2xl">
+          <SheetHeader className="border-b pb-4">
+            <SheetTitle>{doc.label}</SheetTitle>
+            <SheetDescription>
+              {doc.filename} · {formatBytes(doc.sizeBytes)}
+            </SheetDescription>
+          </SheetHeader>
+          <div className="min-h-0 flex-1 overflow-auto px-4 py-3">
+            {loadingPreview ? (
+              <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                <Loader2 className="size-4 animate-spin" /> Loading…
+              </div>
+            ) : previewError ? (
+              <p className="text-sm text-destructive">{previewError}</p>
+            ) : (
+              <pre className="font-mono text-xs leading-relaxed whitespace-pre-wrap text-foreground">
+                {previewText}
+              </pre>
+            )}
+          </div>
+          <SheetFooter className="flex-row justify-end gap-2 border-t pt-4">
+            <Button variant="outline" size="sm" onClick={openInNewTab}>
+              <ExternalLink /> Open in new tab
+            </Button>
+          </SheetFooter>
+        </SheetContent>
+      </Sheet>
+    </>
   );
 }
 

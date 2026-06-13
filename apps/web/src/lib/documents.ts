@@ -113,6 +113,21 @@ export async function uploadDocument(
   }
 }
 
+export async function getUploadedDocumentContent(
+  sessionId: string,
+  documentId: string,
+): Promise<{ document: UploadedDocumentDto; text: string }> {
+  const [row] = await requireDb()
+    .select()
+    .from(sourceDocuments)
+    .where(and(eq(sourceDocuments.id, documentId), eq(sourceDocuments.sessionId, sessionId)));
+
+  if (!row) throw new Error("Document not found.");
+
+  const text = await getBlobText(row.blobUrl);
+  return { document: toDto(row), text };
+}
+
 export async function deleteUploadedDocument(sessionId: string, documentId: string): Promise<void> {
   const [row] = await requireDb()
     .select()
