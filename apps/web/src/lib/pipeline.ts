@@ -2,7 +2,7 @@ import { analyze } from "./analyze";
 import { countMentions, extractFromDocument, type DocExtraction } from "./extract";
 import { hasXai } from "./grok";
 import { MOCK_RECORD } from "./mock-record";
-import { reconcile } from "./reconcile";
+import { reconcileStream } from "./reconcile";
 import type { Insights, Reconciled } from "./schemas";
 import type {
   AllergyFact,
@@ -37,17 +37,7 @@ export async function* runPipeline(docs: SourceDoc[]): AsyncGenerator<PipelineEv
     return;
   }
 
-  try {
-    yield* runLive(docs);
-  } catch (err) {
-    yield {
-      type: "note",
-      stage: "ingest",
-      tone: "flag",
-      text: `Grok call failed (${(err as Error).message}). Falling back to the reference record.`,
-    };
-    yield* runOffline(docs, null);
-  }
+  yield* runLive(docs);
 }
 
 async function* runLive(docs: SourceDoc[]): AsyncGenerator<PipelineEvent> {
@@ -102,15 +92,15 @@ async function* runLive(docs: SourceDoc[]): AsyncGenerator<PipelineEvent> {
     label: "Reconciling: identity, de-duplication, coding & units",
     status: "start",
   };
-  const reconciled = await reconcile(extractions);
-  for (const note of reconciled.identityNotes) {
-    yield { type: "note", stage: "reconcile", tone: "info", text: note };
-    await sleep(70);
+  let reconciled: Reconciled | undefined;
+  for await (const event of reconcileStream(extractions)) {
+    if (event.type === "note") {
+      yield { type: "note", stage: "reconcile", tone: event.tone, text: event.text };
+    } else {
+      reconciled = event.result;
+    }
   }
-  for (const note of reconciled.reconciliationNotes) {
-    yield { type: "note", stage: "reconcile", tone: "merge", text: note };
-    await sleep(70);
-  }
+  if (!reconciled) throw new Error("Reconciliation produced no result.");
   const record = toHealthRecord(reconciled, docs, labelOf);
   yield {
     type: "stage",
@@ -136,27 +126,58 @@ async function* runLive(docs: SourceDoc[]): AsyncGenerator<PipelineEvent> {
     detail: `${allFacts.length - ungrounded}/${allFacts.length} facts grounded · ${flagged} flagged for review`,
   };
 
-  // 5. Analyze (cross-provider safety) ----------------------------------------
-  yield { type: "stage", stage: "analyze", label: "Cross-provider safety analysis with Grok", status: "start" };
-  const insights = await analyze(reconciled);
-  record.insights = toInsights(insights, record);
-  for (const i of record.insights) {
-    yield {
-      type: "note",
-      stage: "analyze",
-      tone: i.severity === "high" ? "flag" : "model",
-      text: `[${i.severity.toUpperCase()}] ${i.title}`,
-    };
-    await sleep(90);
-  }
-  const high = record.insights.filter((i) => i.severity === "high").length;
+  // 5. Analyze (cross-provider safety + live web search) ----------------------
   yield {
     type: "stage",
     stage: "analyze",
-    label: "Cross-provider safety analysis with Grok",
-    status: "done",
-    detail: `${record.insights.length} findings · ${high} high-severity`,
+    label: "Cross-provider safety analysis · live web search",
+    status: "start",
   };
+  const searchNotes: string[] = [];
+  try {
+    const analyzed = await analyze(reconciled, (note) => searchNotes.push(note));
+    for (const note of searchNotes) {
+      yield { type: "note", stage: "analyze", tone: "info", text: note };
+      await sleep(60);
+    }
+    record.insights = toInsights(analyzed.insights, record);
+    record.webSources = analyzed.webSources;
+    record.meta = { pipeline: "live" };
+    for (const i of record.insights) {
+      yield {
+        type: "note",
+        stage: "analyze",
+        tone: i.severity === "high" ? "flag" : "model",
+        text: `[${i.severity.toUpperCase()}] ${i.title}`,
+      };
+      await sleep(90);
+    }
+    const high = record.insights.filter((i) => i.severity === "high").length;
+    yield {
+      type: "stage",
+      stage: "analyze",
+      label: "Cross-provider safety analysis · live web search",
+      status: "done",
+      detail: `${record.insights.length} findings · ${high} high-severity · ${record.webSources?.length ?? 0} web sources`,
+    };
+  } catch (err) {
+    const msg = (err as Error).message;
+    yield {
+      type: "note",
+      stage: "analyze",
+      tone: "flag",
+      text: `Analysis failed (${msg.slice(0, 200)}). Your reconciled record is still valid — re-run to retry web search.`,
+    };
+    record.insights = [];
+    record.meta = { pipeline: "live" };
+    yield {
+      type: "stage",
+      stage: "analyze",
+      label: "Cross-provider safety analysis · live web search",
+      status: "done",
+      detail: "Analysis failed — reconciled meds/labs/conditions saved",
+    };
+  }
 
   yield { type: "result", record };
 }
@@ -292,7 +313,11 @@ const OFFLINE_STAGES: { stage: string; label: string; detail: (r: HealthRecord) 
 ];
 
 async function* runOffline(docs: SourceDoc[], reason: string | null): AsyncGenerator<PipelineEvent> {
-  const record: HealthRecord = { ...MOCK_RECORD, sources: docs };
+  const record: HealthRecord = {
+    ...MOCK_RECORD,
+    sources: docs,
+    meta: { pipeline: "fallback" },
+  };
   if (reason) yield { type: "note", stage: "ingest", tone: "flag", text: reason };
 
   for (const s of OFFLINE_STAGES) {

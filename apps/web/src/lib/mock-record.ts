@@ -234,9 +234,6 @@ export const MOCK_RECORD: HealthRecord = {
       explanation:
         "Urgent care prescribed clarithromycin without the medication list. Clarithromycin is a strong CYP3A4 inhibitor that sharply raises simvastatin blood levels, risking myopathy and rhabdomyolysis — the combination is contraindicated on the simvastatin label. No single record contained both drugs, so no one prescriber could have caught it.",
       crossProvider: true,
-      citationUrl:
-        "https://www.fda.gov/drugs/drug-safety-and-availability/fda-drug-safety-communication-new-restrictions-contraindications-and-dose-limitations-zocor-simvastatin",
-      citationLabel: "FDA Drug Safety Communication — simvastatin contraindications",
       relatedFactIds: ["med-clarithromycin", "med-simvastatin"],
     },
     {

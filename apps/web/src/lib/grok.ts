@@ -30,3 +30,31 @@ export function grokModel(role: ModelRole) {
   }
   return xai(MODELS[role]);
 }
+
+/**
+ * Analyze step uses the xAI Responses API so we can attach server-side tools
+ * like `web_search` for verified clinical citations.
+ */
+export function grokResponsesModel(role: ModelRole = "analyze") {
+  if (!xai) {
+    throw new Error("XAI_API_KEY is not set — cannot reach Grok.");
+  }
+  return xai.responses(MODELS[role]);
+}
+
+/** Web search scoped to authoritative clinical/government sources. */
+export function grokWebSearchTool() {
+  if (!xai) {
+    throw new Error("XAI_API_KEY is not set — cannot reach Grok.");
+  }
+  // xAI allows at most 5 allowedDomains. fda.gov covers accessdata.fda.gov subdomains.
+  return xai.tools.webSearch({
+    allowedDomains: [
+      "fda.gov",
+      "dailymed.nlm.nih.gov",
+      "ncbi.nlm.nih.gov",
+      "cdc.gov",
+      "uspreventiveservicestaskforce.org",
+    ],
+  });
+}

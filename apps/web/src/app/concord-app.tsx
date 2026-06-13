@@ -337,7 +337,9 @@ export function ConcordApp() {
           onRemove={(id) => void removeDocument(id)}
         />
         <main className="min-w-0 space-y-6">
-          {status === "running" && <Pipeline stages={stages} />}
+          {(status === "running" || (status === "done" && stages.length > 0)) && (
+            <Pipeline stages={stages} />
+          )}
           {record && status !== "running" && (
             <Results
               record={record}
@@ -671,17 +673,66 @@ function Results({
       })}`
     : null;
 
+  const isFallback = record.meta?.pipeline === "fallback";
+  const hasWebCitations =
+    (record.webSources?.length ?? 0) > 0 || record.insights.some((i) => i.citationUrl);
+
   return (
     <div className={`space-y-6 ${stale ? "opacity-80" : ""}`}>
-      {(savedLabel || stale) && (
+      {isFallback && (
+        <div className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-100">
+          This is the <strong>reference record</strong> (Grok was unavailable). Click{" "}
+          <strong>Run again</strong> for live reconciliation with Grok web search and verified citation
+          links.
+        </div>
+      )}
+      {!isFallback && !hasWebCitations && record.meta?.pipeline === "live" && (
+        <div className="rounded-xl border border-amber-500/25 bg-amber-500/10 px-4 py-3 text-sm text-amber-100">
+          Reconciliation succeeded but analysis did not complete. Click <strong>Run again</strong> to
+          retry Grok web search for findings and citations.
+        </div>
+      )}
+      {!isFallback && !hasWebCitations && !record.meta?.pipeline && (
+        <div className="rounded-xl border border-sky-500/25 bg-sky-500/10 px-4 py-3 text-sm text-sky-100">
+          No web citations on this saved record. Click <strong>Run again</strong> to re-analyze with
+          live Grok web search.
+        </div>
+      )}
+      {(savedLabel || stale || record.meta?.pipeline === "live") && (
         <div className="flex flex-wrap items-center gap-2 text-xs text-slate-400">
           {savedLabel && <span>{savedLabel}</span>}
+          {record.meta?.pipeline === "live" && (
+            <span className="rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2 py-0.5 text-emerald-200">
+              Live Grok
+            </span>
+          )}
           {stale && (
             <span className="rounded-full border border-amber-500/30 bg-amber-500/10 px-2 py-0.5 text-amber-200">
               May be outdated
             </span>
           )}
         </div>
+      )}
+      {record.webSources && record.webSources.length > 0 && (
+        <section className="rounded-xl border border-white/10 bg-white/[0.03] p-4">
+          <h2 className="mb-2 text-sm font-medium text-slate-300">
+            Web sources ({record.webSources.length})
+          </h2>
+          <ul className="space-y-1.5">
+            {record.webSources.map((s) => (
+              <li key={s.url}>
+                <a
+                  href={s.url}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="text-xs text-sky-300 underline-offset-2 hover:underline"
+                >
+                  {s.title?.trim() || s.url} ↗
+                </a>
+              </li>
+            ))}
+          </ul>
+        </section>
       )}
       <section>
         <div className="mb-3 flex items-center justify-between">

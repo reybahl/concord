@@ -97,6 +97,11 @@ export interface SourceDoc {
   text: string;
 }
 
+export interface WebSource {
+  url: string;
+  title?: string;
+}
+
 export interface HealthRecord {
   patient: { name: string; dob?: string; sex?: string };
   sources: SourceDoc[];
@@ -105,6 +110,11 @@ export interface HealthRecord {
   conditions: ConditionFact[];
   allergies: AllergyFact[];
   insights: Insight[];
+  /** URLs retrieved via Grok web_search during analysis (verified reachable). */
+  webSources?: WebSource[];
+  meta?: {
+    pipeline: "live" | "fallback";
+  };
 }
 
 /** Streamed pipeline progress event. */
