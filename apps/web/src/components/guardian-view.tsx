@@ -53,6 +53,8 @@ interface AssessmentEvent {
 interface TranscriptTurn {
   role: "room" | "guardian";
   text: string;
+  /** Stable id for room lines so revisions update in place instead of appending. */
+  key?: string;
 }
 
 const SEV: Record<string, { label: string; cls: string }> = {
@@ -163,16 +165,30 @@ export function GuardianView({
         onStatus: setStatus,
         onError: (m) => setError(m),
         onRoomUtterance: assess,
-        onTranscript: (role, text, final) => {
-          if (final) {
-            if (text.trim()) setCommitted((prev) => [...prev, { role, text }]);
-            if (role === "room") setLiveRoom("");
-            else setLiveGuardian("");
-          } else if (role === "room") {
-            setLiveRoom(text);
-          } else {
-            setLiveGuardian(text);
+        onTranscript: (role, text, final, key) => {
+          if (!final) {
+            if (role === "room") setLiveRoom(text);
+            else setLiveGuardian(text);
+            return;
           }
+
+          if (role === "room") setLiveRoom("");
+          else setLiveGuardian("");
+
+          // Keyed room lines update in place (and an empty text removes the line).
+          if (role === "room" && key) {
+            setCommitted((prev) => {
+              const idx = prev.findIndex((t) => t.key === key);
+              if (idx === -1) return text.trim() ? [...prev, { role, text, key }] : prev;
+              if (!text.trim()) return prev.filter((_, i) => i !== idx);
+              const next = [...prev];
+              next[idx] = { role, text, key };
+              return next;
+            });
+            return;
+          }
+
+          if (text.trim()) setCommitted((prev) => [...prev, { role, text }]);
         },
       });
 

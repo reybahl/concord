@@ -41,7 +41,12 @@ export interface GuardianSessionConfig {
    */
   captureSource?: CaptureSource;
   onStatus?: (status: GuardianStatus) => void;
-  onTranscript?: (role: "room" | "guardian", text: string, final: boolean) => void;
+  /**
+   * A transcript update. `final` lines are kept; non-final is the live preview.
+   * For room lines, `key` identifies a specific line so it can be updated in
+   * place as the recognizer revises it (empty text means "remove this line").
+   */
+  onTranscript?: (role: "room" | "guardian", text: string, final: boolean, key?: string) => void;
   /** Decide what to do with a finalized room utterance. Runs the grounded check. */
   onRoomUtterance: (text: string) => Promise<UtteranceDecision>;
   onError?: (message: string) => void;
@@ -56,16 +61,24 @@ export class GuardianSession {
   private micSource: MediaStreamAudioSourceNode | null = null;
 
   private playbackTime = 0;
-  private roomBuffer = "";
   private guardianBuffer = "";
-  private lastRoomFinal = "";
   private closed = false;
+
+  // Room transcript segmentation. The recognizer streams a growing (and
+  // sometimes revised) cumulative transcript per turn. We render one line per
+  // sentence, keyed by index, and update lines in place as they're revised — so
+  // nothing is duplicated and nothing is lost. Each sentence is assessed once.
+  private roomItemId: string | null = null;
+  private roomTurnSeq = 0;
+  private roomFull = "";
+  private roomSentences: string[] = [];
+  private roomAssessedCount = 0;
+  private roomTail = "";
 
   // Speech control: nothing plays unless it belongs to a response we sanctioned.
   private sanctionedResponseId: string | null = null;
   private awaitingSanctioned = false;
   private guardianSpeaking = false;
-  private assessing = false;
 
   constructor(private readonly config: GuardianSessionConfig) {}
 
@@ -173,10 +186,12 @@ export class GuardianSession {
 
   private onMicFrame(samples: Float32Array): void {
     if (this.ws?.readyState !== WebSocket.OPEN) return;
-    // Don't feed the server while the guardian is speaking (prevents it from
-    // hearing its own voice) or while an assessment is in flight (prevents
-    // overlapping turns mid-decision).
-    if (this.guardianSpeaking || this.assessing) return;
+    // In mic mode, mute while the guardian is speaking so the room mic doesn't
+    // capture (and transcribe) the guardian's own voice. In tab mode the
+    // captured stream is the room only — the guardian plays on this tab's
+    // speakers, not into the captured audio — so we forward every frame and
+    // never drop room speech.
+    if (this.config.captureSource !== "tab" && this.guardianSpeaking) return;
     this.send({ type: "input_audio_buffer.append", audio: floatToBase64PCM16(samples) });
   }
 
@@ -227,20 +242,11 @@ export class GuardianSession {
         break;
       }
       case "conversation.item.input_audio_transcription.updated": {
-        const text = readText(event);
-        if (text) this.config.onTranscript?.("room", (this.roomBuffer = text), false);
+        this.ingestRoom(readText(event).trim(), false, readItemId(event));
         break;
       }
       case "conversation.item.input_audio_transcription.completed": {
-        const text = (readText(event) || this.roomBuffer).trim();
-        this.roomBuffer = "";
-        // The server can emit a duplicate "completed" for the same turn; ignore
-        // it so we neither show it twice nor re-run the assessment.
-        if (text && text !== this.lastRoomFinal) {
-          this.lastRoomFinal = text;
-          this.config.onTranscript?.("room", text, true);
-          void this.handleRoomUtterance(text);
-        }
+        this.ingestRoom(readText(event).trim(), true, readItemId(event));
         break;
       }
       case "response.output_audio_transcript.delta": {
@@ -288,8 +294,67 @@ export class GuardianSession {
     }, remainingMs + 250);
   }
 
+  /**
+   * Fold a room transcript update into the live transcript.
+   *
+   * Non-final updates only refresh the live preview line. Final updates carry a
+   * (cumulative, sometimes revised) transcript for the current turn: we split it
+   * into sentences and emit each as a line keyed by index, so revisions update
+   * the existing line in place rather than appending a new one — no duplicates,
+   * nothing lost. Each sentence is assessed exactly once.
+   */
+  private ingestRoom(text: string, isFinal: boolean, itemId: string | null): void {
+    if (!text) return;
+
+    if (!isFinal) {
+      this.config.onTranscript?.("room", splitSentences(text).tail, false);
+      return;
+    }
+
+    const itemChanged = itemId !== null && this.roomItemId !== null && itemId !== this.roomItemId;
+    // If the server omits item ids, detect a new turn by the text restarting
+    // (it neither extends nor is a prefix of the previous turn's transcript).
+    const diverged =
+      itemId === null && this.roomFull !== "" && !text.startsWith(this.roomFull) && !this.roomFull.startsWith(text);
+    if (itemChanged || diverged) this.resetRoomTurn();
+    if (itemId !== null) this.roomItemId = itemId;
+    this.roomFull = text;
+
+    const { sentences, tail } = splitSentences(text);
+    // Upsert each sentence line; a shrunk count clears the now-stale trailing lines.
+    const lineCount = Math.max(sentences.length, this.roomSentences.length);
+    for (let i = 0; i < lineCount; i++) {
+      const next = sentences[i] ?? "";
+      if (next !== (this.roomSentences[i] ?? "")) {
+        this.config.onTranscript?.("room", next, true, `${this.roomTurnSeq}:${i}`);
+      }
+    }
+    this.roomSentences = sentences;
+
+    for (let i = this.roomAssessedCount; i < sentences.length; i++) void this.handleRoomUtterance(sentences[i]);
+    this.roomAssessedCount = Math.max(this.roomAssessedCount, sentences.length);
+
+    this.roomTail = tail;
+    this.config.onTranscript?.("room", tail, false);
+  }
+
+  /** End the current turn: commit any unfinished tail, then start a fresh line namespace. */
+  private resetRoomTurn(): void {
+    const tail = this.roomTail.trim();
+    if (tail) {
+      this.config.onTranscript?.("room", tail, true, `${this.roomTurnSeq}:${this.roomSentences.length}`);
+      void this.handleRoomUtterance(tail);
+    }
+    this.roomTurnSeq += 1;
+    this.roomItemId = null;
+    this.roomFull = "";
+    this.roomSentences = [];
+    this.roomAssessedCount = 0;
+    this.roomTail = "";
+    this.config.onTranscript?.("room", "", false);
+  }
+
   private async handleRoomUtterance(text: string): Promise<void> {
-    this.assessing = true;
     this.setStatus("thinking");
     let decision: UtteranceDecision;
     try {
@@ -297,8 +362,6 @@ export class GuardianSession {
     } catch (err) {
       this.config.onError?.((err as Error).message);
       decision = { mode: "silent" };
-    } finally {
-      this.assessing = false;
     }
 
     if (decision.mode === "speak" && decision.text.trim()) {
@@ -353,6 +416,29 @@ function readText(event: Record<string, unknown>): string {
   if (typeof event.transcript === "string") return event.transcript;
   if (typeof event.text === "string") return event.text;
   return "";
+}
+
+function readItemId(event: Record<string, unknown>): string | null {
+  if (typeof event.item_id === "string") return event.item_id;
+  const item = event.item;
+  if (item && typeof item === "object" && typeof (item as { id?: unknown }).id === "string") {
+    return (item as { id: string }).id;
+  }
+  return null;
+}
+
+/** Split text into complete sentences (terminated by . ! ?) plus the unfinished tail. */
+function splitSentences(text: string): { sentences: string[]; tail: string } {
+  const sentences: string[] = [];
+  const re = /[^.!?]*[.!?]+/g;
+  let lastIndex = 0;
+  let match: RegExpExecArray | null;
+  while ((match = re.exec(text)) !== null) {
+    const sentence = match[0].trim();
+    if (sentence) sentences.push(sentence);
+    lastIndex = re.lastIndex;
+  }
+  return { sentences, tail: text.slice(lastIndex).trim() };
 }
 
 function readErrorMessage(event: Record<string, unknown>): string {
