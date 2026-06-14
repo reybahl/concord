@@ -1,4 +1,9 @@
-import { listUploadedDocuments, uploadDocument, isStorageConfigured } from "@/lib/documents";
+import {
+  clearSessionWorkspace,
+  isStorageConfigured,
+  listUploadedDocuments,
+  uploadDocument,
+} from "@/lib/documents";
 import { apiError, apiOk } from "@/lib/api";
 import { getOrCreateSessionId, getSessionId } from "@/lib/session";
 
@@ -18,6 +23,21 @@ export async function GET() {
     const sessionId = (await getSessionId()) ?? (await getOrCreateSessionId());
     const documents = await listUploadedDocuments(sessionId);
     return apiOk({ documents, configured: true });
+  } catch (err) {
+    return apiError((err as Error).message, 500);
+  }
+}
+
+/** Delete all uploads and the saved reconciled record for this session. */
+export async function DELETE() {
+  try {
+    if (!isStorageConfigured()) {
+      return apiError("Storage is not configured (DATABASE_URL + BLOB_READ_WRITE_TOKEN required).", 503);
+    }
+
+    const sessionId = (await getSessionId()) ?? (await getOrCreateSessionId());
+    const result = await clearSessionWorkspace(sessionId);
+    return apiOk({ ok: true, ...result });
   } catch (err) {
     return apiError((err as Error).message, 500);
   }

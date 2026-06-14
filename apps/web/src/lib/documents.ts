@@ -9,6 +9,7 @@ import {
   isBlobConfigured,
   putBlob,
 } from "./blob";
+import { deleteRecordForSession } from "./reconciled-records";
 import { isPdfMimeType } from "./mime";
 import type { SourceDoc } from "./types";
 
@@ -176,6 +177,16 @@ export async function getUploadedDocumentContent(
   const text = isPdf ? "" : bytes.toString("utf-8");
 
   return { document: toDto(row), text, bytes, isPdf };
+}
+
+/** Remove every upload and the saved reconciled record for this session. */
+export async function clearSessionWorkspace(sessionId: string): Promise<{ documentsRemoved: number }> {
+  const docs = await listUploadedDocuments(sessionId);
+  for (const doc of docs) {
+    await deleteUploadedDocument(sessionId, doc.id);
+  }
+  await deleteRecordForSession(sessionId);
+  return { documentsRemoved: docs.length };
 }
 
 export async function deleteUploadedDocument(sessionId: string, documentId: string): Promise<void> {

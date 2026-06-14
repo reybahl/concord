@@ -143,6 +143,7 @@ export function ConcordApp({ view }: { view: DashboardView }) {
   const [documents, setDocuments] = useState<UploadedDocument[]>([]);
   const [loadingDocs, setLoadingDocs] = useState(true);
   const [uploading, setUploading] = useState(false);
+  const [clearing, setClearing] = useState(false);
   const [storageError, setStorageError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -229,6 +230,37 @@ export function ConcordApp({ view }: { view: DashboardView }) {
       return;
     }
     await refreshDocuments();
+  }
+
+  async function clearAll() {
+    if (storageError || status === "running") return;
+    if (
+      !window.confirm(
+        "Remove all uploaded files and clear the reconciled record, findings, and pipeline log?",
+      )
+    ) {
+      return;
+    }
+
+    setClearing(true);
+    setActionError(null);
+
+    try {
+      const res = await fetch("/api/documents", { method: "DELETE" });
+      const data = (await res.json()) as { error?: string };
+      if (!res.ok) throw new Error(data.error ?? "Clear failed.");
+
+      setDocuments([]);
+      setRecord(null);
+      setSavedSourceDocumentIds([]);
+      setReconciledAt(null);
+      setStages([]);
+      setStatus("idle");
+    } catch (err) {
+      setActionError((err as Error).message);
+    } finally {
+      setClearing(false);
+    }
   }
 
   async function run() {
@@ -340,7 +372,9 @@ export function ConcordApp({ view }: { view: DashboardView }) {
     URL.revokeObjectURL(url);
   }
 
-  const canReconcile = documents.length > 0 && !storageError && !uploading && status !== "running";
+  const canReconcile = documents.length > 0 && !storageError && !uploading && !clearing && status !== "running";
+  const canClearAll =
+    !storageError && !uploading && !clearing && status !== "running" && (documents.length > 0 || record !== null);
 
   const statusLabel =
     status === "running"
@@ -452,6 +486,9 @@ export function ConcordApp({ view }: { view: DashboardView }) {
               onPickFiles={() => fileInputRef.current?.click()}
               onFilesSelected={(files) => void uploadFiles(files)}
               onRemove={(id) => void removeDocument(id)}
+              onClearAll={() => void clearAll()}
+              canClearAll={canClearAll}
+              clearing={clearing}
             />
           )}
 
@@ -703,6 +740,9 @@ function UploadView({
   onPickFiles,
   onFilesSelected,
   onRemove,
+  onClearAll,
+  canClearAll,
+  clearing,
 }: {
   documents: UploadedDocument[];
   loadingDocs: boolean;
@@ -720,6 +760,9 @@ function UploadView({
   onPickFiles: () => void;
   onFilesSelected: (files: FileList) => void;
   onRemove: (id: string) => void;
+  onClearAll: () => void;
+  canClearAll: boolean;
+  clearing: boolean;
 }) {
   const disabled = Boolean(storageError);
 
@@ -735,22 +778,33 @@ function UploadView({
             Drop visit summaries, lab reports, and pharmacy printouts (.txt or .pdf).
           </p>
         </div>
-        <Button onClick={onRun} disabled={status === "running" || !canReconcile}>
-          {status === "running" ? (
-            <Loader2 className="animate-spin" />
-          ) : (
-            <Activity />
-          )}
-          {status === "running"
-            ? "Reconciling…"
-            : documents.length === 0
-              ? "Upload records to reconcile"
-              : stale
-                ? "Update reconciliation"
-                : record
-                  ? "Run again"
-                  : `Reconcile ${documents.length} record${documents.length === 1 ? "" : "s"}`}
-        </Button>
+        <div className="flex flex-wrap items-center gap-2">
+          <Button
+            variant="outline"
+            onClick={onClearAll}
+            disabled={!canClearAll}
+            className="text-destructive hover:text-destructive"
+          >
+            {clearing ? <Loader2 className="animate-spin" /> : <Trash2 />}
+            {clearing ? "Clearing…" : "Clear all"}
+          </Button>
+          <Button onClick={onRun} disabled={status === "running" || !canReconcile}>
+            {status === "running" ? (
+              <Loader2 className="animate-spin" />
+            ) : (
+              <Activity />
+            )}
+            {status === "running"
+              ? "Reconciling…"
+              : documents.length === 0
+                ? "Upload records to reconcile"
+                : stale
+                  ? "Update reconciliation"
+                  : record
+                    ? "Run again"
+                    : `Reconcile ${documents.length} record${documents.length === 1 ? "" : "s"}`}
+          </Button>
+        </div>
       </div>
 
       <div className="grid gap-6 lg:grid-cols-[minmax(0,340px)_minmax(0,1fr)]">

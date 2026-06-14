@@ -42,6 +42,11 @@ export async function getLatestRecordForSession(sessionId: string): Promise<Save
   return toDto(row);
 }
 
+export async function deleteRecordForSession(sessionId: string): Promise<void> {
+  if (!isDbConfigured) return;
+  await requireDb().delete(records).where(eq(records.sessionId, sessionId));
+}
+
 export async function saveRecordForSession(
   sessionId: string,
   sourceDocumentIds: string[],
